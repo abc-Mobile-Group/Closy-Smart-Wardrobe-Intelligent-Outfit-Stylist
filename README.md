@@ -2,7 +2,7 @@
 
 > **Closy** là ứng dụng tủ đồ thông minh giúp người dùng quản lý quần áo và tự động gợi ý outfit phù hợp với **bối cảnh, màu sắc và điều kiện thực tế**, đồng thời ưu tiên sử dụng những món đồ lâu chưa được mặc.
 
---- -----
+---
 
 ## 👥 Group & Project
 
