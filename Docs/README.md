@@ -1,5 +1,7 @@
 # Closy: Ứng dụng mobile tủ đồ gợi ý đồ thông minh
 
+> **Phiên bản:** v2. Ưu tiên **Sprint 1 và Sprint 2 để giao khách trước**; Sprint 3 và 4 làm sau.
+
 ## 1. Tiêu chí dự án
 
 | # | Tiêu chí | Ý nghĩa | Được đáp ứng bởi |
@@ -10,16 +12,30 @@
 
 ---
 
-## 2. Use case theo sprint
+## 2. Quyết định đã chốt
 
-### Sprint 1: Nền tảng và tài khoản
-- **UC0: Đăng nhập bằng Gmail** (server xác thực Google token, cấp JWT).
-- Dựng khung app, điều hướng 3 màn, DB cục bộ.
+| # | Quyết định | Hệ quả |
+|---|---|---|
+| 1 | Không bắt buộc client-server, **nhưng bắt buộc xác thực Gmail và có tài khoản** | Server là **bắt buộc** (verify Google token, lưu `users`) |
+| 2 | Tách nền ảnh **qua server** | Sprint 2 phụ thuộc server; cần fallback khi server lỗi |
+| 3 | Lịch thông báo: **thiết kế để sau** | Chỉ giữ bảng `planned_events`, chưa code |
+| 4 | Danh mục: **chỉ Áo và Quần/Váy** (bỏ giày, áo khoác, phụ kiện) | Một bộ đồ gồm 2 món; mở rộng danh mục sau |
+| 5 | Hệ thống gợi ý chạy **trên thiết bị** (local-first) | Offline được, nhanh, giữ dữ liệu tủ ở lại máy |
+| 6 | Nền tảng: **Android ưu tiên**, iOS sau | Chỉ cam kết APK; iOS cần tài khoản Apple Developer |
+| 7 | **Giao khách Sprint 1 + 2 trước** | Sprint 3, 4 nằm ngoài lần giao đầu |
 
-> Lưu ý: đăng nhập Google trên React Native thường cần *development build*, không chạy trong Expo Go. Nếu trễ, dời Auth xuống cuối, đừng để chặn lõi sản phẩm.
+---
 
-### Sprint 2: Xây dựng tủ đồ (CRUD Wardrobe)
-- **UC1: Thêm món đồ**: chọn nguồn (thư viện ảnh) → xử lý ảnh → xác nhận nhãn → lưu.
+## 3. Use case theo sprint
+
+### Sprint 1: Nền tảng và tài khoản *(giao khách)*
+- **UC0: Đăng nhập bằng Gmail** → server xác thực Google token → cấp JWT → lưu trong SecureStore.
+- Giữ phiên khi mở lại app, có nút Đăng xuất.
+- Khung app 3 tab: Tủ đồ, Thêm món, Gợi ý (tab Gợi ý hiện trạng thái "sắp có").
+- DB cục bộ có cơ chế migration theo version.
+
+### Sprint 2: Tủ đồ, CRUD Wardrobe *(giao khách)*
+- **UC1: Thêm món đồ**: chọn ảnh từ thư viện → xử lý ảnh (server tách nền + lấy màu) → xác nhận nhãn → lưu.
 - **UC2: Xem và sửa kho đồ**.
 
 ### Sprint 3: MVP hệ thống gợi ý
@@ -30,77 +46,84 @@
 ### Sprint 4: Hệ thống phụ trợ
 - **UC6: Thống kê số lần mặc** → phân tích đồ ít dùng → đề xuất tái sử dụng hoặc đem từ thiện.
 - **UC7: Gợi ý đồ cho lịch hẹn / sự kiện quan trọng** (đám cưới...): chọn ngày + loại sự kiện, lưu lại, đến lúc dùng thì gọi engine với bối cảnh tương ứng.
-- **UC8: Phân tích tủ còn thiếu gì** (bổ sung để phủ tiêu chí Reuse): đếm theo danh mục, mức trang trọng, bối cảnh.
+- **UC8: Phân tích tủ còn thiếu gì** (phủ tiêu chí Reuse).
+- **Thiết kế (chưa code):** lịch và thông báo nhắc sự kiện.
 
 ---
 
-## 3. Mô hình hệ thống
+## 4. Mô hình hệ thống
 
-**Client gần như 100%**: dữ liệu tủ đồ, lịch sử và hệ thống gợi ý đều chạy trên điện thoại (local-first), hoạt động khi không có mạng.
+**Phần lớn logic nằm ở client.** Server giữ phần nhỏ nhưng bắt buộc: tài khoản và xử lý ảnh.
 
-**Server (laptop cá nhân) chỉ giữ phần nhỏ:**
-
-| Endpoint | Việc | Bắt buộc? |
-|---|---|---|
-| `GET /health` | Kiểm tra server sống | Có |
-| `POST /auth/google` | Xác thực Google ID token, cấp JWT, lưu tài khoản cơ bản | Có (nếu giữ Auth) |
-| `POST /image/process` | Tách nền ảnh (rembg) | Tùy chọn (có thể thay bằng cắt tay hoặc ML Kit) |
-| `POST /events` | Nhận thống kê ẩn danh khi người dùng đồng ý | Tùy chọn |
-
-Nguyên tắc: **app vẫn dùng được khi server tắt**. Chỉ mất đăng nhập mới, tách nền và thống kê gửi lên.
+| Endpoint | Việc | Sprint | Bắt buộc? |
+|---|---|---|---|
+| `GET /health` | Kiểm tra server sống | 1 | Có |
+| `POST /auth/google` | Xác thực Google ID token, cấp JWT, lưu tài khoản | 1 | Có |
+| `POST /image/process` | Tách nền (rembg) + trả về màu chủ đạo HSL | 2 | Có |
+| `POST /events` | Thống kê ẩn danh khi người dùng đồng ý | Sau | Không |
 
 ```
 ┌─────────────── ĐIỆN THOẠI (Closy, React Native) ───────────────┐
 │ UI (Tủ đồ · Thêm món · Gợi ý)                                    │
 │   → ViewModel/Store (Zustand)                                    │
-│   → Services (Wardrobe · Image · ColorHarmony ·                  │
-│               Recommendation · History)                          │
-│   → Repository → LocalDB (SQLite) + File ảnh                     │
+│   → Services (Auth · Wardrobe · Image · ColorHarmony ·           │
+│               Recommendation · History · Insight)                │
+│   → Repository → LocalDB (SQLite) + File ảnh + SecureStore       │
 └──────────────┬───────────────────────────────────────────────────┘
-               │ HTTPS (tùy chọn, có fallback)
+               │ HTTPS + JWT
         ┌──────▼──────────────────────────┐
         │ LAPTOP: Docker                  │
-        │  FastAPI (auth, image, events)  │
+        │  FastAPI (auth, image)          │
         │  Cloudflare Tunnel → Internet   │
         └─────────────────────────────────┘
 ```
 
 ---
 
-## 4. Frontend (client)
+## 5. Frontend (client)
 
 | Hạng mục | Chọn |
 |---|---|
 | Nền tảng | Android ưu tiên, iOS sau |
 | Framework | React Native + Expo + TypeScript |
-| Màn hình chính | Tủ đồ, Thêm món, Gợi ý |
+| Màn hình chính | Tủ đồ, Thêm món, Gợi ý (+ Đăng nhập) |
 | State | Zustand (hoặc Context API) |
-| Phần cứng | Thư viện ảnh trước; camera và GPS làm sau |
-| Xin quyền | Contextual permission: chỉ xin camera khi bấm chụp |
+| Phần cứng | **Thư viện ảnh trước**; camera và GPS làm sau |
+| Xin quyền | Contextual permission: chỉ xin khi cần dùng |
 | DB | `expo-sqlite` |
 | File ảnh | `expo-file-system` |
 | Chọn ảnh | `expo-image-picker` |
 | Nén ảnh | `expo-image-manipulator` |
+| Lưu token | `expo-secure-store` |
+| Đăng nhập Google | Thư viện Google Sign-In cho RN (xem lưu ý) |
 | Test | Jest |
 
 Kiến trúc layered: **UI → ViewModel/Store → Service → Repository → LocalDB**.
 
-### Module (đều nằm ở client)
+### Module
 
-| Module | Việc |
-|---|---|
-| `WardrobeService` | Thêm, sửa, xóa món; `isReady()` |
-| `ImageService` | Nén ảnh, lấy màu chủ đạo; gọi server tách nền (tùy chọn) |
-| `ColorHarmonyEngine` | Chấm điểm cặp màu theo HSL |
-| `RecommendationEngine` | Lọc, tạo tổ hợp, chấm điểm, `suggest()`, Lock/Swap |
-| `HistoryService` | `confirmWear()`, cập nhật `last_worn` |
-| `InsightService` | Thống kê số lần mặc, đồ ít dùng, phân tích thiếu hụt |
+| Module | Nằm ở | Việc |
+|---|---|---|
+| `AuthService` | Client + Server | Đăng nhập Google, lưu/gia hạn JWT |
+| `WardrobeService` | Client | Thêm, sửa, xóa món; `isReady()` |
+| `ImageService` | Client gọi Server | Nén ảnh, gọi `/image/process`, nhận ảnh đã tách + màu |
+| `ColorHarmonyEngine` | Client | Chấm điểm cặp màu theo HSL |
+| `RecommendationEngine` | Client | Lọc, tạo tổ hợp, chấm điểm, `suggest()`, Lock/Swap |
+| `HistoryService` | Client | `confirmWear()`, cập nhật `last_worn` |
+| `InsightService` | Client | Thống kê, đồ ít dùng, thiếu hụt tủ |
+
+### Lưu ý về Google Sign-In (rủi ro lớn nhất Sprint 1)
+
+- Cần Google Cloud Console: **Web client ID** (server dùng để verify) và **Android client ID** (kèm **SHA-1** của khóa ký app).
+- Trong Expo, đăng nhập Google thường **không chạy trong Expo Go**; cần **development build** (EAS Build). Nên build thử ngay đầu Sprint 1.
+- SHA-1 của bản build EAS khác bản debug; đăng ký đúng SHA-1 của bản đang dùng.
+- Cấu hình thay đổi theo phiên bản, kiểm tra tài liệu hiện hành của thư viện và Google.
 
 ---
 
-## 5. Thuật toán gợi ý (chạy trên máy)
+## 6. Thuật toán gợi ý (Sprint 3, chạy trên máy)
 
-Điểm của một bộ (áo + quần/váy + giày):
+Một bộ đồ gồm **1 áo + 1 quần/váy**:
 
 ```
 Tổng = Điểm màu + Điểm trang trọng + Điểm đồng bộ + Điểm tái sử dụng
@@ -108,9 +131,9 @@ Tổng = Điểm màu + Điểm trang trọng + Điểm đồng bộ + Điểm t
 
 | Thành phần | Cách tính | Tiêu chí |
 |---|---|---|
-| **Màu** | Cặp áo-quần, quần-giày: trung tính +3, tương đồng (lệch H < 30°) +3, tương phản (150-210°) +2 | Best match |
-| **Trang trọng** | Trừ điểm theo độ lệch so với mức mong muốn của bối cảnh | Best match |
-| **Đồng bộ** | Trừ điểm nếu 3 món chênh nhau nhiều (vest + dép) | Best match |
+| **Màu** | Cặp áo-quần: trung tính +3, tương đồng (lệch H < 30°) +3, tương phản (150-210°) +2 | Best match |
+| **Trang trọng** | Trừ điểm theo tổng độ lệch so với mức mong muốn của bối cảnh | Best match |
+| **Đồng bộ** | Trừ điểm nếu áo và quần chênh mức trang trọng | Best match |
 | **Tái sử dụng** | +1 nếu có món lâu chưa mặc (chỉ cộng khi bộ đã đạt) | Reuse |
 
 **Nhãn độ trang trọng của món:** 1 = thoải mái, 3 = gọn gàng, 5 = trang trọng.
@@ -119,37 +142,85 @@ Tổng = Điểm màu + Điểm trang trọng + Điểm đồng bộ + Điểm t
 
 **Màu:** HSL. Trung tính khi `S < 15` hoặc `L < 15` hoặc `L > 90`. Độ lệch H tính vòng tròn: `d = min(|h1-h2|, 360-|h1-h2|)`.
 
-**Lock/Swap:** món khóa cố định, bấm Đổi thì loại các bộ đã hiện và tính lại. Thêm nhiễu ngẫu nhiên nhỏ để các lần Đổi ra kết quả khác nhau.
+**Lock/Swap:** món khóa cố định, bấm Đổi thì loại các bộ đã hiện rồi tính lại; thêm nhiễu ngẫu nhiên nhỏ để mỗi lần Đổi ra kết quả khác.
 
-Mã tham chiếu (TypeScript) đặt tại `client/src/engine/suggest.ts`. Các ngưỡng là số khởi đầu, cần chỉnh bằng 20-30 món đồ thật.
+Mã tham chiếu đặt tại `client/src/engine/suggest.ts`. Các ngưỡng là số khởi đầu, chỉnh bằng 20-30 món đồ thật.
 
 ---
 
-## 6. Dữ liệu
+## 7. Dữ liệu
 
 ### Client (SQLite + file)
 
 | Bảng / nơi lưu | Cột / nội dung |
 |---|---|
-| `items` | `id`, `category` (top/bottom/shoes), `image_path`, `color_h`, `color_s`, `color_l`, `formality` (1/3/5), `contexts`, `last_worn`, `wear_count` |
-| `outfits` | `id`, `top_id`, `bottom_id`, `shoes_id`, `context`, `worn_at` |
-| `planned_events` | `id`, `date`, `context`, `note` (cho UC7) |
+| `items` | `id`, `category` (`top`/`bottom`), `image_path`, `color_h`, `color_s`, `color_l`, `formality` (1/3/5), `contexts`, `last_worn`, `wear_count` |
+| `outfits` *(Sprint 3)* | `id`, `top_id`, `bottom_id`, `context`, `worn_at` |
+| `planned_events` *(thiết kế, chưa code)* | `id`, `date`, `context`, `note`, `remind_at` |
 | `settings` | `style`, `allow_analytics` |
 | File ảnh | Thư mục riêng của app; DB chỉ lưu đường dẫn tương đối |
 | SecureStore | JWT |
+
+`category` dùng enum để mở rộng giày, áo khoác, phụ kiện sau mà không đổi cấu trúc.
 
 ### Server (SQLite trong volume Docker)
 
 | Bảng | Cột |
 |---|---|
 | `users` | `id`, `google_sub`, `email`, `created_at` |
-| `events` (tùy chọn) | `user_id`, `event_type`, `payload`, `ts` |
+| `events` *(sau)* | `user_id`, `event_type`, `payload`, `ts` |
 
 Server **không lưu ảnh lâu dài**: nhận ảnh, tách nền, trả về, bỏ.
 
 ---
 
-## 7. Server và Docker
+## 8. Chi tiết Sprint 1 và 2 (giao khách)
+
+### Sprint 1: Nền tảng và Auth
+
+| Việc | Chi tiết |
+|---|---|
+| Server | Docker chạy `/health`, `/auth/google`; bảng `users` |
+| Client đăng nhập | Google Sign-In → `id_token` → `/auth/google` → JWT → SecureStore |
+| Phiên | Mở lại app vẫn đăng nhập; JWT hết hạn thì về màn đăng nhập; có Đăng xuất |
+| Khung app | 3 tab điều hướng |
+| DB | Bảng `items` + migration có version |
+| Hạ tầng | Tunnel ổn định, README chạy server |
+
+**Nghiệm thu:**
+- Đăng nhập Gmail thành công trên điện thoại thật.
+- Endpoint có JWT gọi được, không token thì 401.
+- Tắt app mở lại vẫn còn phiên.
+
+### Sprint 2: Tủ đồ
+
+**UC1: Thêm món**
+
+```
+Chọn ảnh từ thư viện
+ → Client resize (cạnh dài ~800px)
+ → POST /image/process (kèm JWT)
+ → Server tách nền + tính màu chủ đạo → trả về
+ → Màn hình xác nhận: ảnh đã tách, màu tự điền, chọn Áo/Quần,
+   mức trang trọng, bối cảnh
+ → Lưu file ảnh + ghi DB
+```
+
+Fallback khi server lỗi hoặc timeout: lưu **ảnh gốc**, cho người dùng tự chọn màu, không chặn luồng.
+
+**UC2: Xem và sửa kho đồ**
+- Lưới ảnh, lọc theo Áo/Quần.
+- Mở một món để sửa danh mục, màu, mức trang trọng, bối cảnh; xóa món (xóa luôn file ảnh).
+- Trạng thái trống có nút "Thêm món đầu tiên".
+
+**Nghiệm thu:**
+- Thêm 1 món trong tối đa 4 chạm sau khi chọn ảnh.
+- Xem, sửa, xóa hoạt động; đóng mở app dữ liệu vẫn còn.
+- Thời gian tách nền trên laptop của nhóm đã đo thật và ghi lại.
+
+---
+
+## 9. Server và Docker
 
 ### Cấu trúc repo
 
@@ -162,7 +233,7 @@ closy/
 │   │   ├── repositories/
 │   │   ├── store/
 │   │   └── screens/
-│   ├── assets/             # dữ liệu mẫu, icon
+│   ├── assets/
 │   └── app.json
 └── server/
     ├── Dockerfile
@@ -236,13 +307,15 @@ JWT_SECRET=chuoi_ngau_nhien_dai
 DB_PATH=/data/closy.db
 ```
 
-### `server/main.py` (khung chạy thử)
+### `server/main.py`
 
 ```python
-import io, os, time, sqlite3
+import io, os, time, base64, sqlite3, colorsys
+from collections import Counter
+
 import jwt
 from fastapi import FastAPI, UploadFile, File, Header, HTTPException
-from fastapi.responses import Response
+from fastapi.responses import JSONResponse
 from google.oauth2 import id_token
 from google.auth.transport import requests as grequests
 from rembg import remove, new_session
@@ -270,6 +343,23 @@ def current_user(authorization: str) -> int:
         return jwt.decode(token, JWT_SECRET, algorithms=["HS256"])["uid"]
     except Exception:
         raise HTTPException(401, "Token không hợp lệ")
+
+
+def dominant_hsl(img: Image.Image):
+    """Màu chủ đạo của các pixel không trong suốt, trả về (H 0-360, S 0-100, L 0-100)."""
+    small = img.copy()
+    small.thumbnail((64, 64))
+    px = [p for p in small.getdata() if p[3] > 128]
+    if not px:
+        return 0, 0, 50
+    bucket = lambda p: (p[0] // 32, p[1] // 32, p[2] // 32)
+    top_bucket = Counter(bucket(p) for p in px).most_common(1)[0][0]
+    pts = [p for p in px if bucket(p) == top_bucket]
+    r = sum(p[0] for p in pts) / len(pts) / 255
+    g = sum(p[1] for p in pts) / len(pts) / 255
+    b = sum(p[2] for p in pts) / len(pts) / 255
+    h, l, s = colorsys.rgb_to_hls(r, g, b)
+    return round(h * 360), round(s * 100), round(l * 100)
 
 
 @app.get("/health")
@@ -305,9 +395,13 @@ async def process(file: UploadFile = File(...), authorization: str = Header(...)
     img = Image.open(io.BytesIO(data)).convert("RGBA")
     img.thumbnail((800, 800))
     out = remove(img, session=session)
+    h, s, l = dominant_hsl(out)
     buf = io.BytesIO()
     out.save(buf, format="PNG")
-    return Response(buf.getvalue(), media_type="image/png")
+    return JSONResponse({
+        "image_base64": base64.b64encode(buf.getvalue()).decode(),
+        "h": h, "s": s, "l": l,
+    })
 ```
 
 ### Chạy
@@ -319,45 +413,47 @@ docker compose logs tunnel | grep trycloudflare   # lấy link https://xxxx.tryc
 curl https://xxxx.trycloudflare.com/health
 ```
 
-Dán link vào biến `EXPO_PUBLIC_API_URL` của client. Link có HTTPS sẵn nên Android và iOS đều không chặn, điện thoại khác mạng vẫn gọi được.
+Dán link vào `EXPO_PUBLIC_API_URL` của client. Link có HTTPS sẵn, điện thoại khác mạng vẫn gọi được.
 
-### Lưu ý khi đẩy laptop ra mạng
+### Rủi ro khi dùng laptop làm server
 
-- Link tunnel miễn phí **đổi mỗi lần chạy lại**; cần domain riêng nếu muốn link cố định.
-- Laptop phải bật, không sleep, có mạng. Windows cần Docker Desktop.
-- Mọi endpoint (trừ `/health`, `/auth/google`) bắt buộc có JWT.
-- **Không commit** `.env`; thêm vào `.gitignore`.
-- **Không để API key trong client.** Mọi biến `EXPO_PUBLIC_*` đều lộ trong app.
+| Rủi ro | Cách giảm |
+|---|---|
+| Link tunnel miễn phí **đổi mỗi lần chạy lại**, app đã cài sẽ gọi sai | Dùng link cố định (Cloudflare Tunnel có tên + domain, hoặc Tailscale Funnel) |
+| Laptop tắt, sleep hoặc mất mạng khi khách dùng | Tắt sleep, cắm sạc, báo khung giờ server online |
+| Server lỗi thì không tách nền được | Fallback lưu ảnh gốc; app vẫn dùng được |
+| Đăng nhập cần server | Cho dùng tiếp khi JWT còn hạn |
+| Khách test kéo dài nhiều ngày | Cân nhắc đưa Docker lên host miễn phí/rẻ; xem lại hạn mức từng nhà cung cấp |
+
+Bảo mật: mọi endpoint (trừ `/health`, `/auth/google`) bắt buộc JWT; **không commit** `.env`; **không để API key trong client** (mọi biến `EXPO_PUBLIC_*` đều lộ trong app).
 
 ---
 
-## 8. Quyền riêng tư
+## 10. Quyền riêng tư
 
 - Dữ liệu tủ đồ và lịch sử **ở lại trên máy**.
-- Ảnh chỉ rời máy khi người dùng chủ động dùng tính năng tách nền, và được xóa sau khi xử lý.
-- Thống kê gửi server (nếu có) chỉ là metadata ẩn danh, **chỉ khi người dùng bật đồng ý**.
-- Có màn hình giải thích rõ gửi gì, cho tắt và cho xóa dữ liệu.
+- Server lưu tài khoản (Google ID, email). Ảnh chỉ gửi lên để tách nền và không được lưu lại.
+- Thống kê (nếu làm sau) chỉ là metadata ẩn danh, **chỉ khi người dùng bật đồng ý**.
+- Có màn hình giải thích rõ gửi gì, cho đăng xuất và cho xóa dữ liệu.
 
 ---
 
-## 9. Build và demo
+## 11. Build và giao khách
 
 | Giai đoạn | Cách chạy |
 |---|---|
-| Dev | `npx expo start` + Expo Go |
-| Demo | APK build bằng EAS Build (hoặc `expo prebuild` + Gradle) |
-| iOS | Chỉ khi có tài khoản Apple Developer; không cam kết trong MVP |
+| Dev | `npx expo start` (Expo Go cho phần không cần Google Sign-In) |
+| Từ Sprint 1 | **Development build** qua EAS để thử Google Sign-In |
+| Giao khách | **APK** build bằng EAS Build (hoặc `expo prebuild` + Gradle) |
+| iOS | Chỉ khi có tài khoản Apple Developer; không cam kết ở giai đoạn này |
 
-Chuẩn bị demo:
-- Dữ liệu mẫu 15-20 món (đủ màu, đủ mức trang trọng) và nút nạp lại dữ liệu mẫu.
-- Kịch bản: xem tủ → thêm món → gợi ý Hẹn hò → đổi sang Đám cưới → khóa món/Đổi → xác nhận mặc → thống kê → tủ còn thiếu gì → **bật chế độ máy bay chạy lại gợi ý**.
-- Quay video dự phòng; dùng `scrcpy` để chiếu màn hình điện thoại.
+Trước khi giao: cài thử APK trên máy sạch, thử đăng nhập, thêm món, tắt/mở app; kèm README cách chạy server và bản hướng dẫn cài APK.
 
 ---
 
-## 10. Điểm còn cần nhóm chốt
+## 12. Việc còn mở
 
-1. Đề môn có bắt buộc client-server không? Nếu không, có thể bỏ Auth và server hoàn toàn.
-2. Tách nền: server (rembg), ML Kit (cần development build) hay cắt ảnh tay.
-3. UC7: lưu lịch hẹn ở client (`planned_events`), có cần nhắc lịch bằng thông báo không.
-4. Thêm danh mục áo khoác/phụ kiện hay giữ 3 loại (áo, quần/váy, giày) cho MVP.
+1. Link server cố định cho khách test: dùng domain riêng hay đưa lên host?
+2. Xác nhận bỏ giày khỏi bộ đồ (hiện tài liệu đang để bộ gồm áo + quần/váy). Nếu cần giữ giày, chỉ cần thêm `shoes` vào enum `category` và vòng lặp tổ hợp.
+3. Chốt cách thông báo (local notification hay server push) khi thiết kế lịch ở Sprint 4.
+4. Dữ liệu mẫu 15-20 món để test và demo.
