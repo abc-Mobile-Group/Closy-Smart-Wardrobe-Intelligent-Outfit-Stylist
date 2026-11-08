@@ -7,3 +7,6 @@ UC1: Thêm món đồ: chọn nguồn ( kho ảnh đt ) -> xử lí ảnh -> xá
 UC2: Xem và sửa kho đồ 
 
 Sprint 3: MVP XÂY DỰNG HỆ THỐNG GỢI Ý 
+UC3: GỬI BỐI CẢNH ( BACKGROUND ) cho server -> client nhận lại hệ thống gợi ý 
+UC4: Đổi gợi ý / Khóa outfit
+UC5: Lưu lịch sử
