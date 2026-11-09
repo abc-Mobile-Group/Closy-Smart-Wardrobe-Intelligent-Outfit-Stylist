@@ -1,0 +1,12 @@
+node_modules/
+.expo/
+dist/
+*.apk
+*.aab
+.env
+__pycache__/
+.pytest_cache/
+.venv/
+*.db
+android/
+ios/

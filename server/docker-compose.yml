@@ -1,0 +1,19 @@
+services:
+  api:
+    build: .
+    env_file: .env
+    ports:
+      - "8000:8000"          # để test qua Wi-Fi nội bộ: http://IP-laptop:8000/health
+    volumes:
+      - closy_data:/data
+    restart: unless-stopped
+
+  tunnel:
+    image: cloudflare/cloudflared:latest
+    command: tunnel --no-autoupdate --url http://api:8000
+    depends_on:
+      - api
+    restart: unless-stopped
+
+volumes:
+  closy_data:
