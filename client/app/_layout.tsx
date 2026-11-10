@@ -47,8 +47,12 @@ export default function RootLayout() {
 
 const styles = StyleSheet.create({
   splash: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: colors.bg,
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: colors.bg,    
     alignItems: 'center',
     justifyContent: 'center',
   },

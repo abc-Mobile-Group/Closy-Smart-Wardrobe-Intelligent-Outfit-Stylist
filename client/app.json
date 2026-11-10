@@ -13,6 +13,16 @@
       "expo-router",
       "expo-secure-store",
       "@react-native-google-signin/google-signin"
-    ]
+    ],
+    "extra": {
+      "router": {
+        "asyncRoutes": {
+          "web": true
+        }
+      },
+      "eas": {
+        "projectId": "0dd93884-ccc3-408c-8f6a-629c6289a1fb"
+      }
+    }
   }
 }
