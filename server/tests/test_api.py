@@ -20,7 +20,7 @@ def google_ok(monkeypatch):
     monkeypatch.setattr(
         main.id_token,
         "verify_oauth2_token",
-        lambda *_a, **_k: {"sub": "g-123", "email": "a@gmail.com", "email_verified": True},
+        lambda *_a, **_k: {"sub": "g-123", "email": "a@gmail.com", "email_verified": True, "name": "An"},
     )
 
 
@@ -61,6 +61,47 @@ def test_login_unverified_email(monkeypatch):
         lambda *_a, **_k: {"sub": "g-9", "email": "b@x.com", "email_verified": False},
     )
     assert client.post("/auth/google", json={"id_token": "x"}).status_code == 401
+
+
+def test_register_and_login_flow():
+    # Đăng ký thành công
+    res = client.post(
+        "/auth/register",
+        json={"email": "newuser@closy.vn", "password": "password123", "name": "Nguyễn Văn A"},
+    )
+    assert res.status_code == 200
+    data = res.json()
+    assert data["email"] == "newuser@closy.vn"
+    assert "token" in data
+
+    # Đăng ký trùng email báo lỗi 400
+    res_dup = client.post(
+        "/auth/register",
+        json={"email": "newuser@closy.vn", "password": "password123"},
+    )
+    assert res_dup.status_code == 400
+
+    # Đăng ký mật khẩu < 8 ký tự báo lỗi 400
+    res_short = client.post(
+        "/auth/register",
+        json={"email": "user2@closy.vn", "password": "123"},
+    )
+    assert res_short.status_code == 400
+
+    # Đăng nhập đúng mật khẩu
+    login_res = client.post(
+        "/auth/login",
+        json={"email": "newuser@closy.vn", "password": "password123"},
+    )
+    assert login_res.status_code == 200
+    assert "token" in login_res.json()
+
+    # Đăng nhập sai mật khẩu
+    bad_login = client.post(
+        "/auth/login",
+        json={"email": "newuser@closy.vn", "password": "wrongpassword"},
+    )
+    assert bad_login.status_code == 401
 
 
 def test_me_requires_token():

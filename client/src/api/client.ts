@@ -39,7 +39,13 @@ export async function apiFetch<T>(
     if (res.status === 401 && auth) onUnauthorized?.();
     if (!res.ok) {
       const body = await res.json().catch(() => null);
-      throw new ApiError(res.status, body?.detail ?? `Lỗi server (${res.status})`);
+      let detailMsg = `Lỗi server (${res.status})`;
+      if (typeof body?.detail === 'string') {
+        detailMsg = body.detail;
+      } else if (Array.isArray(body?.detail)) {
+        detailMsg = body.detail.map((d: any) => d.msg || JSON.stringify(d)).join('; ');
+      }
+      throw new ApiError(res.status, detailMsg);
     }
     return (await res.json()) as T;
   } catch (e) {
