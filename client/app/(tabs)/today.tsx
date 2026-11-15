@@ -35,6 +35,7 @@ export default function TodayScreen() {
   const [weather, setWeather] = useState<WeatherData>(WeatherService.getDefaultWeather());
   const [isLoadingWeather, setIsLoadingWeather] = useState(false);
   const [outfits, setOutfits] = useState<SuggestedOutfit[]>([]);
+  const [activeOutfitIndex, setActiveOutfitIndex] = useState(0);
   const [isLoadingOutfits, setIsLoadingOutfits] = useState(false);
 
   // Lấy thời tiết hiện tại khi vào màn hình
@@ -61,6 +62,11 @@ export default function TodayScreen() {
     }, [])
   );
 
+  // Reset về bộ số 1 khi đổi bối cảnh hoặc danh sách đồ thay đổi
+  useEffect(() => {
+    setActiveOutfitIndex(0);
+  }, [selectedContext, items]);
+
   // Tính ngày hiện tại hiển thị tiếng Việt (VD: "THỨ HAI, 16 THÁNG 11")
   const formattedDate = useMemo(() => {
     const now = new Date();
@@ -84,7 +90,10 @@ export default function TodayScreen() {
       setIsLoadingOutfits(true);
       try {
         const list = await OutfitService.getSuggestions(items, currentContext.name, weather);
-        if (isMounted) setOutfits(list);
+        if (isMounted) {
+          setOutfits(list);
+          setActiveOutfitIndex(0);
+        }
       } catch (err) {
         console.warn('[TodayScreen] Lỗi lấy gợi ý:', err);
       } finally {
@@ -98,7 +107,7 @@ export default function TodayScreen() {
     };
   }, [items, currentContext.name, weather]);
 
-  const currentOutfit = outfits.length > 0 ? outfits[0] : null;
+  const currentOutfit = outfits.length > 0 ? outfits[Math.min(activeOutfitIndex, outfits.length - 1)] : null;
 
   // Mục "Lâu rồi chưa mặc nhỉ?": Chỉ lấy từ đồ thật của người dùng
   const reminderItem = useMemo(() => {
@@ -210,25 +219,121 @@ export default function TodayScreen() {
             </Pressable>
           </View>
 
-          {currentOutfit ? (
-            /* Large Outfit Inspiration Card */
-            <View style={styles.outfitCard}>
-              {/* Collage */}
-              <View style={styles.collageContainer}>
-                {currentOutfit.type === 'one_piece' ? (
-                  currentOutfit.items.length === 1 ? (
-                    <Image
-                      source={currentOutfit.items[0].image}
-                      style={styles.collageFull}
-                      resizeMode="contain"
+          {/* Dải chọn các tổ hợp phối đồ (Multiple combinations) */}
+          {outfits.length > 1 && (
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.comboPillRow}
+            >
+              {outfits.map((outfit, index) => {
+                const active = index === activeOutfitIndex;
+                return (
+                  <Pressable
+                    key={outfit.id || index}
+                    style={[styles.comboPill, active && styles.comboPillActive]}
+                    onPress={() => setActiveOutfitIndex(index)}
+                  >
+                    <Ionicons
+                      name={active ? 'sparkles' : 'shirt-outline'}
+                      size={13}
+                      color={active ? colors.onPrimary : colors.primary}
                     />
+                    <Text
+                      style={[
+                        styles.comboPillText,
+                        active && styles.comboPillTextActive,
+                      ]}
+                    >
+                      {index === 0 ? 'Bộ 1 · Chuẩn nhất' : `Bộ ${index + 1}`}
+                    </Text>
+                  </Pressable>
+                );
+              })}
+            </ScrollView>
+          )}
+
+          {currentOutfit ? (
+            <>
+              {/* Large Outfit Inspiration Card */}
+              <View style={styles.outfitCard}>
+                {/* Header thanh điều hướng tổ hợp: Bộ X / Y */}
+                {outfits.length > 1 && (
+                  <View style={styles.comboHeaderRow}>
+                    <Text style={styles.comboCounterText}>
+                      GỢI Ý {activeOutfitIndex + 1} / {outfits.length} · {currentContext.name.toUpperCase()}
+                    </Text>
+                    <View style={styles.comboArrowGroup}>
+                      <Pressable
+                        style={[styles.comboArrowBtn, activeOutfitIndex === 0 && styles.comboArrowDisabled]}
+                        onPress={() => setActiveOutfitIndex((p) => Math.max(0, p - 1))}
+                        disabled={activeOutfitIndex === 0}
+                      >
+                        <Ionicons
+                          name="chevron-back"
+                          size={16}
+                          color={activeOutfitIndex === 0 ? colors.textLight : colors.text}
+                        />
+                      </Pressable>
+                      <Pressable
+                        style={[
+                          styles.comboArrowBtn,
+                          activeOutfitIndex === outfits.length - 1 && styles.comboArrowDisabled,
+                        ]}
+                        onPress={() => setActiveOutfitIndex((p) => Math.min(outfits.length - 1, p + 1))}
+                        disabled={activeOutfitIndex === outfits.length - 1}
+                      >
+                        <Ionicons
+                          name="chevron-forward"
+                          size={16}
+                          color={activeOutfitIndex === outfits.length - 1 ? colors.textLight : colors.text}
+                        />
+                      </Pressable>
+                    </View>
+                  </View>
+                )}
+
+                {/* Collage */}
+                <View style={styles.collageContainer}>
+                  {currentOutfit.type === 'one_piece' ? (
+                    currentOutfit.items.length === 1 ? (
+                      <Image
+                        source={currentOutfit.items[0].image}
+                        style={styles.collageFull}
+                        resizeMode="contain"
+                      />
+                    ) : (
+                      <>
+                        <View style={styles.collageLeft}>
+                          {currentOutfit.items[1] && (
+                            <Image
+                              source={currentOutfit.items[1].image}
+                              style={styles.collageSingleLeft}
+                              resizeMode="contain"
+                            />
+                          )}
+                          {currentOutfit.items[2] && (
+                            <Image
+                              source={currentOutfit.items[2].image}
+                              style={styles.collageBottomLeft}
+                              resizeMode="contain"
+                            />
+                          )}
+                        </View>
+                        <Image
+                          source={currentOutfit.items[0].image}
+                          style={styles.collageRight}
+                          resizeMode="contain"
+                        />
+                      </>
+                    )
                   ) : (
                     <>
                       <View style={styles.collageLeft}>
-                        {currentOutfit.items[1] && (
+                        {currentOutfit.items[0] && (
                           <Image
-                            source={currentOutfit.items[1].image}
-                            style={styles.collageSingleLeft}
+                            source={currentOutfit.items[0].image}
+                            style={styles.collageTopLeft}
                             resizeMode="contain"
                           />
                         )}
@@ -240,61 +345,79 @@ export default function TodayScreen() {
                           />
                         )}
                       </View>
-                      <Image
-                        source={currentOutfit.items[0].image}
-                        style={styles.collageRight}
-                        resizeMode="contain"
-                      />
+                      {currentOutfit.items[1] && (
+                        <Image
+                          source={currentOutfit.items[1].image}
+                          style={styles.collageRight}
+                          resizeMode="contain"
+                        />
+                      )}
                     </>
-                  )
-                ) : (
-                  <>
-                    <View style={styles.collageLeft}>
-                      {currentOutfit.items[0] && (
-                        <Image
-                          source={currentOutfit.items[0].image}
-                          style={styles.collageTopLeft}
-                          resizeMode="contain"
-                        />
-                      )}
-                      {currentOutfit.items[2] && (
-                        <Image
-                          source={currentOutfit.items[2].image}
-                          style={styles.collageBottomLeft}
-                          resizeMode="contain"
-                        />
-                      )}
-                    </View>
-                    {currentOutfit.items[1] && (
-                      <Image
-                        source={currentOutfit.items[1].image}
-                        style={styles.collageRight}
-                        resizeMode="contain"
-                      />
-                    )}
-                  </>
-                )}
+                  )}
+                </View>
+
+                {/* Card info */}
+                <View style={styles.outfitMeta}>
+                  <View style={styles.outfitTitleGroup}>
+                    <Text style={styles.outfitTitle}>{currentOutfit.title}</Text>
+                    <Text style={styles.outfitSubtitle}>{currentOutfit.subtitle}</Text>
+                  </View>
+                  <View style={styles.harmonyTagBadge}>
+                    <Text style={styles.harmonyTagText}>{currentOutfit.harmonyBadge || '+3 Phối đẹp'}</Text>
+                  </View>
+                </View>
+
+                {/* CTA Button */}
+                <Pressable
+                  style={styles.ctaButton}
+                  onPress={() => router.push('/(tabs)/suggest')}
+                >
+                  <Text style={styles.ctaText}>Gợi ý phối đồ {currentContext.name.toLowerCase()} ✨</Text>
+                </Pressable>
               </View>
 
-              {/* Card info */}
-              <View style={styles.outfitMeta}>
-                <View style={styles.outfitTitleGroup}>
-                  <Text style={styles.outfitTitle}>{currentOutfit.title}</Text>
-                  <Text style={styles.outfitSubtitle}>{currentOutfit.subtitle}</Text>
+              {/* Danh sách các cách phối khác (Alternative combinations) */}
+              {outfits.length > 1 && (
+                <View style={styles.otherCombosSection}>
+                  <Text style={styles.otherCombosTitle}>
+                    Các cách phối khác cho {currentContext.name.toLowerCase()}:
+                  </Text>
+                  {outfits.map((outfit, index) => {
+                    if (index === activeOutfitIndex) return null;
+                    return (
+                      <Pressable
+                        key={outfit.id || index}
+                        style={styles.otherComboCard}
+                        onPress={() => setActiveOutfitIndex(index)}
+                      >
+                        <View style={styles.otherComboThumbs}>
+                          {outfit.items.map((it, itIdx) => (
+                            <Image
+                              key={it.id || itIdx}
+                              source={it.image}
+                              style={styles.otherComboThumbImg}
+                              resizeMode="contain"
+                            />
+                          ))}
+                        </View>
+                        <View style={styles.otherComboInfo}>
+                          <Text style={styles.otherComboName} numberOfLines={1}>
+                            Bộ {index + 1}: {outfit.title}
+                          </Text>
+                          <Text style={styles.otherComboSub} numberOfLines={1}>
+                            {outfit.subtitle}
+                          </Text>
+                        </View>
+                        <View style={styles.otherComboBadge}>
+                          <Text style={styles.otherComboBadgeText}>Xem bộ này</Text>
+                          <Ionicons name="swap-horizontal" size={14} color={colors.primary} />
+                        </View>
+                      </Pressable>
+                    );
+                  })}
                 </View>
-                <View style={styles.harmonyTagBadge}>
-                  <Text style={styles.harmonyTagText}>{currentOutfit.harmonyBadge || '+3 Phối đẹp'}</Text>
-                </View>
-              </View>
-
-              {/* CTA Button */}
-              <Pressable
-                style={styles.ctaButton}
-                onPress={() => router.push('/(tabs)/suggest')}
-              >
-                <Text style={styles.ctaText}>Gợi ý phối đồ {currentContext.name.toLowerCase()} ✨</Text>
-              </Pressable>
-            </View>
+              )}
+            </>
           ) : (
             <View style={styles.emptyOutfitCard}>
               <Ionicons name="sparkles-outline" size={32} color={colors.primary} />
@@ -519,6 +642,132 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   ctaText: { color: colors.onPrimary, fontSize: 15, fontWeight: '700' },
+
+  // Multi-combination Pills
+  comboPillRow: {
+    flexDirection: 'row',
+    gap: spacing.xs,
+    paddingVertical: spacing.xs,
+    marginBottom: spacing.xs,
+  },
+  comboPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: radius.full,
+    backgroundColor: '#F0F9FB',
+    borderWidth: 1,
+    borderColor: '#BAE6FD',
+  },
+  comboPillActive: {
+    backgroundColor: colors.primary,
+    borderColor: colors.primary,
+  },
+  comboPillText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: colors.primary,
+  },
+  comboPillTextActive: {
+    color: colors.onPrimary,
+    fontWeight: '700',
+  },
+
+  // Combo Card Header
+  comboHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingBottom: spacing.xs,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+  },
+  comboCounterText: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: colors.primary,
+    letterSpacing: 0.5,
+  },
+  comboArrowGroup: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  comboArrowBtn: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: colors.surfaceSubtle,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  comboArrowDisabled: {
+    opacity: 0.35,
+  },
+
+  // Alternative Combos Section
+  otherCombosSection: {
+    marginTop: spacing.sm,
+    gap: spacing.xs + 2,
+  },
+  otherCombosTitle: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: colors.textMuted,
+  },
+  otherComboCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.surfaceCard,
+    borderRadius: radius.md,
+    padding: spacing.sm,
+    borderWidth: 1,
+    borderColor: colors.border,
+    gap: spacing.sm,
+  },
+  otherComboThumbs: {
+    flexDirection: 'row',
+    gap: 4,
+  },
+  otherComboThumbImg: {
+    width: 36,
+    height: 36,
+    borderRadius: radius.xs,
+    backgroundColor: '#EAE6E1',
+  },
+  otherComboInfo: {
+    flex: 1,
+    gap: 2,
+  },
+  otherComboName: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: colors.text,
+  },
+  otherComboSub: {
+    fontSize: 10,
+    color: colors.textMuted,
+  },
+  otherComboBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+    backgroundColor: '#F0F9FB',
+    paddingHorizontal: 8,
+    paddingVertical: 5,
+    borderRadius: radius.full,
+    borderWidth: 1,
+    borderColor: '#BAE6FD',
+  },
+  otherComboBadgeText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: colors.primary,
+  },
 
   // Reminder Card
   reminderCard: {

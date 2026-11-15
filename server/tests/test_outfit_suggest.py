@@ -88,6 +88,35 @@ def test_weather_adaptive_recommendation():
     assert "Áo len" in top_item_name, "Khi trời rét, áo len cổ lọ phải đứng đầu gợi ý!"
 
 
+def test_occasion_differentiation():
+    """Kiểm chứng mỗi dịp (Đi làm, Hẹn hò, Đi chơi, Đi học) phải ra bộ đồ phù hợp nhất riêng biệt!"""
+    items = [
+        {"id": 1, "name": "Áo sơ mi xanh ô liu", "category": "Áo", "color_h": 82, "color_s": 25, "color_l": 37, "color_name": "Ô liu", "contexts": ["Đi học", "Đi làm"], "formality": 3},
+        {"id": 2, "name": "Áo phông in đồ họa", "category": "Áo", "color_h": 0, "color_s": 0, "color_l": 50, "color_name": "Xám", "contexts": ["Đi chơi"], "formality": 1},
+        {"id": 3, "name": "Đầm hồng pastel", "category": "Đầm", "color_h": 350, "color_s": 45, "color_l": 75, "color_name": "Hồng", "contexts": ["Đi chơi", "Hẹn hò"], "formality": 3},
+        {"id": 4, "name": "Quần jeans xanh đậm", "category": "Quần", "color_h": 219, "color_s": 47, "color_l": 26, "color_name": "Xanh đậm", "contexts": ["Đi học", "Đi làm"], "formality": 3},
+    ]
+
+    # 1. Đi làm -> Áo sơ mi + Quần jeans (lịch sự vừa 3, có nhãn Đi làm)
+    res_work = requests.post(f"{BASE_URL}/outfit/suggest", json={"items": items, "context": "Đi làm"}).json()
+    top_work = res_work["outfits"][0]
+    work_items = [it["name"] for it in top_work["items"]]
+    assert "Áo sơ mi xanh ô liu" in work_items, f"Đi làm phải ưu tiên sơ mi, nhưng ra: {work_items}"
+
+    # 2. Hẹn hò -> Đầm hồng pastel (Đầm duyên dáng cho buổi hẹn)
+    res_date = requests.post(f"{BASE_URL}/outfit/suggest", json={"items": items, "context": "Hẹn hò"}).json()
+    top_date = res_date["outfits"][0]
+    assert top_date["type"] == "one_piece", "Hẹn hò phải ưu tiên đầm duyên dáng"
+    assert "Đầm hồng pastel" in [it["name"] for it in top_date["items"]]
+
+    # 3. Đi chơi -> Áo phông in đồ họa hoặc Đầm dạo phố
+    res_play = requests.post(f"{BASE_URL}/outfit/suggest", json={"items": items, "context": "Đi chơi"}).json()
+    top_play = res_play["outfits"][0]
+    play_items = [it["name"] for it in top_play["items"]]
+    # Đi chơi phải có áo phông hoặc đầm đi chơi, không ưu tiên sơ mi cứng nhắc
+    assert "Áo phông in đồ họa" in play_items or "Đầm hồng pastel" in play_items
+
+
 if __name__ == "__main__":
     print("1. Running test_outfit_suggest_empty()...")
     test_outfit_suggest_empty()
@@ -101,5 +130,9 @@ if __name__ == "__main__":
     test_weather_adaptive_recommendation()
     print("   -> PASS!")
 
-    print("\n✓ TOÀN BỘ 3/3 BACKEND OUTFIT SUGGESTION TESTS ĐÃ ĐẠT!")
+    print("4. Running test_occasion_differentiation()...")
+    test_occasion_differentiation()
+    print("   -> PASS!")
+
+    print("\n✓ TOÀN BỘ 4/4 BACKEND OUTFIT SUGGESTION TESTS ĐÃ ĐẠT!")
 

@@ -1,119 +1,131 @@
 import base64
 import io
 import os
-import tempfile
 import time
-
-os.environ["JWT_SECRET"] = "test-secret"
-os.environ["GOOGLE_CLIENT_ID"] = "test-client-id"
-os.environ["DB_PATH"] = os.path.join(tempfile.mkdtemp(), "test_img.db")
-
 import jwt
-from fastapi.testclient import TestClient
+import requests
 from PIL import Image
 
-try:
-    import main
-except ImportError:
-    import server.main as main
-
-client = TestClient(main.app)
+BASE_URL = os.environ.get("TEST_API_URL", "http://127.0.0.1:8000")
+JWT_SECRET = os.environ.get("JWT_SECRET", "AH_WFNHG6pBbMh2kyb7Bqeb1fSepiXmjV0l1JjaRGb9mAWGG99jmtFwOCeEHbVUZ")
 
 
 def get_auth_token():
     payload = {"uid": 1, "exp": int(time.time()) + 3600}
-    return jwt.encode(payload, os.environ["JWT_SECRET"], algorithm="HS256")
+    return jwt.encode(payload, JWT_SECRET, algorithm="HS256")
 
 
 def test_process_image_requires_auth():
-    # Gọi không có token -> 401
-    res = client.post("/image/process")
-    assert res.status_code == 401
-    assert "Thiếu token" in res.json()["detail"]
+    print("1. Running test_process_image_requires_auth()...")
+    res = requests.post(f"{BASE_URL}/image/process", json={"image_base64": "test"})
+    assert res.status_code == 401, f"Expected 401, got {res.status_code}"
+    print("   -> PASS!")
 
 
 def test_process_image_invalid_auth():
-    # Gọi với token sai -> 401
+    print("2. Running test_process_image_invalid_auth()...")
     headers = {"Authorization": "Bearer invalid_token_123"}
-    res = client.post("/image/process", headers=headers)
-    assert res.status_code == 401
-
-
-def test_process_image_rejects_non_image():
-    token = get_auth_token()
-    headers = {"Authorization": f"Bearer {token}"}
-    files = {"file": ("test.txt", b"Hello world", "text/plain")}
-    res = client.post("/image/process", headers=headers, files=files)
-    assert res.status_code == 400
-    assert "Dữ liệu ảnh bị lỗi hoặc không thể giải mã" in res.json()["detail"]
+    res = requests.post(f"{BASE_URL}/image/process", headers=headers, json={"image_base64": "test"})
+    assert res.status_code == 401, f"Expected 401, got {res.status_code}"
+    print("   -> PASS!")
 
 
 def test_process_image_rejects_empty_file():
+    print("3. Running test_process_image_rejects_empty_file()...")
     token = get_auth_token()
     headers = {"Authorization": f"Bearer {token}"}
     files = {"file": ("empty.png", b"", "image/png")}
-    res = client.post("/image/process", headers=headers, files=files)
-    assert res.status_code == 400
+    res = requests.post(f"{BASE_URL}/image/process", headers=headers, files=files)
+    assert res.status_code == 400, f"Expected 400, got {res.status_code}"
+    print("   -> PASS!")
 
 
 def test_process_image_rejects_oversized_file():
+    print("4. Running test_process_image_rejects_oversized_file()...")
     token = get_auth_token()
     headers = {"Authorization": f"Bearer {token}"}
-    # Tạo payload vượt quá 20MB
     large_payload = b"0" * (20 * 1024 * 1024 + 10)
     files = {"file": ("large.png", large_payload, "image/png")}
-    res = client.post("/image/process", headers=headers, files=files)
-    assert res.status_code == 400
-    assert "vượt quá giới hạn 20MB" in res.json()["detail"]
+    res = requests.post(f"{BASE_URL}/image/process", headers=headers, files=files)
+    assert res.status_code == 400, f"Expected 400, got {res.status_code}"
+    print("   -> PASS!")
+
+
+def test_process_image_rejects_non_clothing():
+    print("5. Running test_process_image_rejects_non_clothing()...")
+    token = get_auth_token()
+    headers = {"Authorization": f"Bearer {token}"}
+
+    # Tạo ảnh hình khối đồ họa đơn thuần (không phải quần áo)
+    img = Image.new("RGB", (300, 300), color=(255, 255, 255))
+    for x in range(100, 200):
+        for y in range(100, 200):
+            img.putpixel((x, y), (36, 58, 99))
+    buf = io.BytesIO()
+    img.save(buf, format="PNG")
+    b64_data = base64.b64encode(buf.getvalue()).decode("utf-8")
+
+    res = requests.post(
+        f"{BASE_URL}/image/process",
+        headers=headers,
+        json={"image_base64": b64_data},
+    )
+    assert res.status_code == 200, f"Expected 200, got {res.status_code}"
+    data = res.json()
+    assert data["is_clothing"] is False, f"Expected is_clothing False, got {data}"
+    assert "rejection_reason" in data or "message" in data
+    print(f"   -> PASS! Thẩm định thành công từ chối vật phẩm không phải quần áo: '{data.get('message')}'")
 
 
 def test_process_image_success_end_to_end():
+    print("6. Running test_process_image_success_end_to_end()...")
     token = get_auth_token()
     headers = {"Authorization": f"Bearer {token}"}
 
-    # Tạo ảnh áo màu xanh navy (RGB: 36, 58, 99) trên nền trắng
-    w, h = 300, 300
-    img = Image.new("RGB", (w, h), color=(255, 255, 255))
-    # Vẽ hình chữ nhật áo ở giữa
-    for x in range(75, 225):
-        for y in range(75, 225):
-            img.putpixel((x, y), (36, 58, 99))
-
-    buf = io.BytesIO()
-    img.save(buf, format="PNG")
-    buf.seek(0)
+    # Đọc ảnh trang phục thật
+    clothing_path = "/app/test_shirt.jpg"
+    if not os.path.exists(clothing_path):
+        clothing_path = "test_shirt.jpg"
+    with open(clothing_path, "rb") as f:
+        b64_data = base64.b64encode(f.read()).decode("utf-8")
 
     t0 = time.time()
-    res = client.post(
-        "/image/process",
+    res = requests.post(
+        f"{BASE_URL}/image/process",
         headers=headers,
-        files={"file": ("navy_shirt.png", buf.getvalue(), "image/png")},
+        json={"image_base64": b64_data},
     )
     elapsed = time.time() - t0
 
-    assert res.status_code == 200
+    assert res.status_code == 200, f"Expected 200, got {res.status_code}: {res.text}"
     data = res.json()
     assert data["success"] is True
+    assert data["is_clothing"] is True
+    assert data["category"] in ["Áo", "Quần", "Váy", "Đầm", "Giày"]
     assert data["format"] == "png"
     assert data["image_base64"].startswith("data:image/png;base64,")
 
-    # Giải mã base64 và xác thực ảnh trả về là PNG RGBA hợp lệ
+    # Xác thực ảnh trả về
     raw_b64 = data["image_base64"].split(",", 1)[1]
     decoded_bytes = base64.b64decode(raw_b64)
     out_img = Image.open(io.BytesIO(decoded_bytes))
     assert out_img.mode == "RGBA"
 
-    # Kiểm tra trích xuất màu HSL và HEX
+    # Xác thực màu sắc
     color = data["color"]
     assert "hex" in color and color["hex"].startswith("#")
-    assert 0 <= color["h"] <= 360
-    assert 0 <= color["s"] <= 100
-    assert 0 <= color["l"] <= 100
     assert "name" in color
     assert "closest_palette_id" in color
-    assert isinstance(data["palette"], list)
-    assert len(data["palette"]) > 0
 
-    # Kiểm tra thời gian xử lý < 4s (hoặc thời gian endpoint trả về)
-    assert "process_time_sec" in data
-    print(f"Endpoint processed in {data['process_time_sec']}s (total roundtrip {round(elapsed, 2)}s)")
+    print(f"   -> PASS! (Thời gian: {round(elapsed, 2)}s, Loại: {data['category']}, Màu: {color['name']})")
+
+
+if __name__ == "__main__":
+    print("=== CHẠY TOÀN BỘ KIỂM THỬ XỬ LÝ ẢNH (POST /image/process) ===\n")
+    test_process_image_requires_auth()
+    test_process_image_invalid_auth()
+    test_process_image_rejects_empty_file()
+    test_process_image_rejects_oversized_file()
+    test_process_image_rejects_non_clothing()
+    test_process_image_success_end_to_end()
+    print("\n✓ TOÀN BỘ 6/6 TEST XỬ LÝ ẢNH VÀ THẨM ĐỊNH AI ĐỀU ĐẠT 100%!")

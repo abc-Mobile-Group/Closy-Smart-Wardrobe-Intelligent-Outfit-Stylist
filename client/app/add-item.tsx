@@ -87,6 +87,85 @@ export default function AddItemScreen() {
   };
 
   /**
+   * Thay đổi Danh mục: đồng bộ tên gợi ý thông minh
+   */
+  const handleCategoryChange = (newCat: Category) => {
+    const oldCat = category;
+    setCategory(newCat);
+    if (!itemName || itemName.trim() === '') {
+      setItemName(`${newCat} ${activeColor.name.toLowerCase()}`);
+    } else {
+      const reg = new RegExp(`^${oldCat}`, 'i');
+      if (reg.test(itemName)) {
+        setItemName(itemName.replace(reg, newCat));
+      } else {
+        let replaced = false;
+        for (const cat of CATEGORIES) {
+          const cReg = new RegExp(`^${cat.id}`, 'i');
+          if (cReg.test(itemName)) {
+            setItemName(itemName.replace(cReg, newCat));
+            replaced = true;
+            break;
+          }
+        }
+        if (!replaced) {
+          setItemName(`${newCat} ${activeColor.name.toLowerCase()}`);
+        }
+      }
+    }
+  };
+
+  /**
+   * Thay đổi Màu sắc: đồng bộ bảng màu và tên gọi thông minh (100% người dùng quyết định)
+   */
+  const handleColorChange = (newColor: (typeof COLOR_PALETTE)[number]) => {
+    setSelectedColorId(newColor.id);
+    if (!itemName || itemName.trim() === '') {
+      setItemName(`${category} ${newColor.name.toLowerCase()}`);
+      return;
+    }
+    let updated = itemName;
+    let replaced = false;
+
+    // 1. Kiểm tra màu hiện tại
+    if (activeColor?.name) {
+      const reg = new RegExp(activeColor.name, 'i');
+      if (reg.test(updated)) {
+        updated = updated.replace(reg, newColor.name.toLowerCase());
+        replaced = true;
+      }
+    }
+
+    // 2. Kiểm tra các màu còn lại trong bảng màu
+    if (!replaced) {
+      for (const pal of COLOR_PALETTE) {
+        const reg = new RegExp(pal.name, 'i');
+        if (reg.test(updated)) {
+          updated = updated.replace(reg, newColor.name.toLowerCase());
+          replaced = true;
+          break;
+        }
+      }
+    }
+
+    // 3. Xử lý các từ ngữ màu thông dụng khác (cam, rêu...)
+    if (!replaced) {
+      if (/cam/i.test(updated)) {
+        updated = updated.replace(/cam/i, newColor.name.toLowerCase());
+        replaced = true;
+      } else if (/rêu/i.test(updated)) {
+        updated = updated.replace(/rêu/i, newColor.name.toLowerCase());
+        replaced = true;
+      }
+    }
+
+    if (!replaced) {
+      updated = `${category} ${newColor.name.toLowerCase()}`;
+    }
+    setItemName(updated);
+  };
+
+  /**
    * Xử lý ảnh sau khi chụp/chọn: Nén cạnh dài 800px & tách nền AI
    */
   const processImageUri = async (rawUri: string) => {
@@ -387,11 +466,7 @@ export default function AddItemScreen() {
                 <Pressable
                   key={cat.id}
                   style={[styles.categoryBtn, active && styles.categoryBtnActive]}
-                  onPress={() => {
-                    setCategory(cat.id);
-                    // Cập nhật tên gợi ý khi đổi danh mục theo màu đang chọn
-                    setItemName(`${cat.id} ${activeColor.name.toLowerCase()}`);
-                  }}
+                  onPress={() => handleCategoryChange(cat.id)}
                 >
                   <Ionicons
                     name={cat.icon}
@@ -484,10 +559,7 @@ export default function AddItemScreen() {
                     c.border ? { borderWidth: 1, borderColor: c.border } : null,
                     active && styles.colorDotActive,
                   ]}
-                  onPress={() => {
-                    setSelectedColorId(c.id);
-                    setItemName(`${category} ${c.name.toLowerCase()}`);
-                  }}
+                  onPress={() => handleColorChange(c)}
                 >
                   {active && (
                     <Ionicons

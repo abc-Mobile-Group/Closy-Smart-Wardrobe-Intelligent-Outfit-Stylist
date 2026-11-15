@@ -84,6 +84,96 @@ export function calculateWeatherScore(item: DisplayItem, weather: WeatherData): 
   return score;
 }
 
+export function calculateItemContextScore(item: WardrobeItem, context: string): number {
+  let score = 0;
+  const nameLower = (item.name || '').toLowerCase();
+  const cat = item.category;
+  const colorLower = (item.color_name || '').toLowerCase();
+  const formality = item.formality || 3;
+  const ctxStr = (context || '').toLowerCase();
+
+  const rawCtxs = item.contexts ? item.contexts.split(',') : [];
+  const cleanCtxs = rawCtxs.map((c) => c.trim().toLowerCase());
+  const hasExplicitContext = cleanCtxs.some((c) => ctxStr.includes(c) || c.includes(ctxStr));
+
+  if (hasExplicitContext) {
+    score += 45;
+  } else if (cleanCtxs.length > 0 && !cleanCtxs.some((c) => c.includes('mọi dịp'))) {
+    score -= 25;
+  }
+
+  if (ctxStr.includes('đi làm') || ctxStr.includes('công sở')) {
+    if (formality === 3) score += 25;
+    else if (formality === 5) score += 30;
+    else if (formality === 1) score -= 35;
+
+    if (
+      nameLower.includes('sơ mi') ||
+      nameLower.includes('polo') ||
+      nameLower.includes('tây') ||
+      nameLower.includes('kaki') ||
+      nameLower.includes('âu') ||
+      nameLower.includes('vest') ||
+      nameLower.includes('blazer')
+    ) {
+      score += 35;
+    }
+    if (
+      nameLower.includes('croptop') ||
+      nameLower.includes('ba lỗ') ||
+      nameLower.includes('short') ||
+      nameLower.includes('rách') ||
+      nameLower.includes('ngắn')
+    ) {
+      score -= 45;
+    }
+  } else if (ctxStr.includes('hẹn hò')) {
+    if (cat === 'Đầm') score += 45;
+    else if (cat === 'Váy') score += 30;
+
+    if (formality >= 3) score += 20;
+    else if (formality === 1) score -= 25;
+
+    if (
+      colorLower.includes('hồng') ||
+      colorLower.includes('kem') ||
+      colorLower.includes('đỏ') ||
+      colorLower.includes('pastel')
+    ) {
+      score += 20;
+    }
+  } else if (ctxStr.includes('đi học')) {
+    if (formality <= 3) score += 25;
+    else score -= 35;
+
+    if (
+      nameLower.includes('thun') ||
+      nameLower.includes('phông') ||
+      nameLower.includes('sơ mi') ||
+      nameLower.includes('jeans') ||
+      nameLower.includes('sneaker')
+    ) {
+      score += 30;
+    }
+  } else if (ctxStr.includes('đi chơi')) {
+    if (formality <= 3) score += 30;
+    else score -= 30;
+
+    if (
+      nameLower.includes('thun') ||
+      nameLower.includes('phông') ||
+      nameLower.includes('croptop') ||
+      nameLower.includes('short') ||
+      nameLower.includes('jeans') ||
+      nameLower.includes('khoác')
+    ) {
+      score += 35;
+    }
+  }
+
+  return score;
+}
+
 export function mapWardrobeItemToDisplay(dbItem: WardrobeItem): DisplayItem {
   return {
     id: dbItem.id,
@@ -143,7 +233,7 @@ export function generateOutfitSuggestions(
       harmonyBadge: '+3 Đầm liền',
       weatherAdvice: weather.recommendationAdvice,
       items: outfitItems,
-      score: 80 + calculateWeatherScore(displayD, weather),
+      score: 50 + calculateItemContextScore(d, contextName) + calculateWeatherScore(displayD, weather),
     });
   }
 
@@ -165,6 +255,8 @@ export function generateOutfitSuggestions(
 
       const score =
         50 +
+        calculateItemContextScore(top, contextName) +
+        calculateItemContextScore(bot, contextName) +
         harmony.score * 10 +
         calculateWeatherScore(displayTop, weather) +
         calculateWeatherScore(displayBot, weather);

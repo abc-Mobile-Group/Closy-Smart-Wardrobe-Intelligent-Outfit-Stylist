@@ -230,3 +230,4 @@ export function runColorHarmonyTests(): { passed: number; failed: number; result
 
   return { passed, failed, results };
 }
+

@@ -36,8 +36,7 @@ DB_PATH = os.environ.get("DB_PATH", "closy.db")
 TOKEN_TTL = 7 * 24 * 3600  # 7 ngày
 MAX_IMAGE_SIZE = 20 * 1024 * 1024  # 20MB
 
-# Cấu hình AI Vision: Mô hình cục bộ Gemma 4 (Ollama) & Gemini Vision
-GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
+# Cấu hình AI Vision: Mô hình cục bộ Gemma 4 (Ollama) Local-First (Không cần Gemini API Key)
 OLLAMA_HOST = os.environ.get("OLLAMA_HOST", "http://host.docker.internal:11434")
 OLLAMA_MODEL = os.environ.get("OLLAMA_MODEL", "gemma4:e4b")
 
@@ -261,9 +260,6 @@ def update_profile(body: UpdateProfileBody, uid: int = Depends(current_user_id))
     return {"id": row["id"], "email": row["email"], "name": row["name"]}
 
 
-GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
-
-
 def classify_clothing_heuristic(transparent_image: Image.Image, color_name: str) -> dict:
     """Phân loại thông minh dựa trên phân tích hình học mask alpha của trang phục."""
     try:
@@ -300,10 +296,12 @@ def classify_clothing_heuristic(transparent_image: Image.Image, color_name: str)
         has_split_legs = False
         if len(bot_part) > 0 and bot_w > 0:
             center_x = cropped.shape[1] // 2
-            margin = max(1, cropped.shape[1] // 12)
-            bottom_half_of_bot = bot_part[len(bot_part) // 2 :, center_x - margin : center_x + margin]
-            if len(bottom_half_of_bot) > 0 and np.mean(bottom_half_of_bot) < 0.2:
+            margin = max(1, cropped.shape[1] // 10)
+            bottom_half_of_bot = bot_part[len(bot_part) // 2 :, max(0, center_x - margin) : min(cropped.shape[1], center_x + margin)]
+            if len(bottom_half_of_bot) > 0 and np.mean(bottom_half_of_bot) < 0.35:
                 has_split_legs = True
+
+        low_color = color_name.lower()
 
         if aspect_ratio < 0.65:
             # Chiều cao thấp hơn nhiều so với chiều ngang -> Giày
@@ -311,27 +309,38 @@ def classify_clothing_heuristic(transparent_image: Image.Image, color_name: str)
             formality = 3
             contexts = ["Đi học", "Đi chơi"]
             name = f"Giày {color_name}".strip()
-        elif aspect_ratio > 1.25:
-            # Trang phục dáng dài: Quần hoặc Váy dài / Đầm
-            # Quần thường có ống suông/thon (bot_w <= 1.15 * top_w) hoặc có khe hở 2 ống
-            if has_split_legs or bot_w <= 1.15 * max(top_w, 1):
+        elif has_split_legs and aspect_ratio >= 0.95:
+            # Có khe hở 2 ống quần rõ ràng -> Quần
+            cat = "Quần"
+            formality = 3
+            contexts = ["Đi học", "Đi làm", "Đi chơi"]
+            if "xanh" in low_color or "navy" in low_color or "đen" in low_color:
+                name = f"Quần jeans {color_name}".strip()
+            else:
+                name = f"Quần {color_name}".strip()
+        elif aspect_ratio > 1.35:
+            # Trang phục dáng dài: Quần dài hoặc Đầm liền thân
+            if bot_w <= 1.2 * max(top_w, 1):
                 cat = "Quần"
                 formality = 3
                 contexts = ["Đi học", "Đi làm", "Đi chơi"]
-                name = f"Quần {color_name}".strip()
+                if "xanh" in low_color or "navy" in low_color or "đen" in low_color:
+                    name = f"Quần jeans {color_name}".strip()
+                else:
+                    name = f"Quần {color_name}".strip()
             else:
                 cat = "Đầm"
                 formality = 3
                 contexts = ["Đi chơi", "Hẹn hò"]
                 name = f"Đầm {color_name}".strip()
-        elif bot_w > 1.3 * max(top_w, 1) and aspect_ratio > 0.75:
+        elif bot_w > 1.25 * max(top_w, 1) and aspect_ratio > 0.75:
             # Đáy xòe rộng dạng chữ A -> Chân váy
             cat = "Váy"
             formality = 3
             contexts = ["Đi chơi", "Hẹn hò"]
             name = f"Chân váy {color_name}".strip()
         else:
-            # Dáng chữ T hoặc vuông -> Áo
+            # Dáng chữ T hoặc gần vuông (áo thun, sơ mi, áo khoác) -> Áo
             cat = "Áo"
             formality = 3
             contexts = ["Đi học", "Đi làm"]
@@ -357,13 +366,13 @@ def classify_clothing_heuristic(transparent_image: Image.Image, color_name: str)
 COLOR_KEYWORD_RULES = [
     # id, name, hex, h, s, l, keywords
     ("olive", "Ô liu", "#636F4E", 82, 17, 37, ["ô liu", "o liu", "olive", "xanh rêu", "rêu"]),
-    ("dusty-pink", "Hồng phấn", "#D29B9B", 0, 38, 72, ["hồng", "hong", "pink", "pastel"]),
-    ("cream", "Kem", "#F5F2EB", 42, 35, 94, ["kem", "be", "beige", "cream", "sữa", "trắng ngà"]),
-    ("navy", "Xanh đậm", "#243A63", 219, 47, 26, ["xanh đậm", "xanh đâm", "navy", "xanh đen", "denim", "jeans xanh", "xanh thẫm"]),
-    ("blue", "Xanh dương", "#2196F3", 207, 90, 54, ["xanh dương", "xanh biển", "xanh da trời", "blue", "cyan"]),
+    ("dusty-pink", "Hồng phấn", "#D29B9B", 0, 38, 72, ["hồng", "hong", "pink", "pastel", "phấn"]),
+    ("cream", "Kem", "#F5F2EB", 42, 35, 94, ["kem", "be", "beige", "cream", "sữa", "trắng ngà", "ivory"]),
+    ("navy", "Xanh đậm", "#243A63", 219, 47, 26, ["xanh đậm", "xanh đâm", "navy", "xanh đen", "denim", "jeans xanh", "xanh thẫm", "xanh indigo"]),
+    ("blue", "Xanh dương", "#2196F3", 207, 90, 54, ["xanh dương", "xanh biển", "xanh da trời", "blue", "cyan", "xanh nhạt", "xanh sáng"]),
     ("black", "Đen", "#1E293B", 222, 47, 11, ["đen", "den", "black"]),
     ("white", "Trắng", "#FFFFFF", 0, 0, 100, ["trắng", "trang", "white"]),
-    ("gray", "Xám", "#808080", 0, 0, 50, ["xám", "xam", "ghi", "gray", "grey"]),
+    ("gray", "Xám", "#808080", 0, 0, 50, ["xám", "xam", "ghi", "gray", "grey", "bạc"]),
     ("brown", "Nâu", "#795548", 16, 25, 38, ["nâu", "nau", "brown", "caramel", "bò"]),
     ("red", "Đỏ", "#E53935", 1, 79, 56, ["đỏ", "do", "red", "mận", "bordeaux"]),
     ("yellow", "Vàng", "#FDD835", 48, 98, 59, ["vàng", "vang", "yellow", "mustard"]),
@@ -378,21 +387,25 @@ def resolve_clothing_color_preset(
     """Ưu tiên suy luận màu sắc chuẩn xác từ nhận thức ngữ nghĩa của AI Vision.
     Ví dụ: 'Áo sơ mi xanh ô liu' -> màu Ô liu (thay vì bị pixel tóc đen chiếm ưu thế).
     'Váy đầm hồng pastel' -> màu Hồng phấn (thay vì bị pixel tóc nâu chiếm ưu thế).
+    'Quần jeans xanh đậm' -> màu Xanh đậm.
     """
-    text_to_search = f"{ai_color_name or ''} {item_name or ''}".lower()
+    # 1. Tìm kiếm trong ai_color_name trước (nếu AI chỉ định trực tiếp màu trang phục)
+    if ai_color_name:
+        low_color = ai_color_name.lower().strip()
+        for pid, name, hex_code, h, s, l, keywords in COLOR_KEYWORD_RULES:
+            for kw in keywords:
+                if kw in low_color:
+                    return {"id": pid, "name": name, "hex": hex_code, "h": h, "s": s, "l": l}
 
-    for pid, name, hex_code, h, s, l, keywords in COLOR_KEYWORD_RULES:
-        for kw in keywords:
-            if kw in text_to_search:
-                return {
-                    "id": pid,
-                    "name": name,
-                    "hex": hex_code,
-                    "h": h,
-                    "s": s,
-                    "l": l,
-                }
+    # 2. Tìm kiếm trong tên món đồ item_name do AI đặt (VD: "Áo sơ mi xanh ô liu", "Quần jeans xanh")
+    if item_name:
+        low_name = item_name.lower().strip()
+        for pid, name, hex_code, h, s, l, keywords in COLOR_KEYWORD_RULES:
+            for kw in keywords:
+                if kw in low_name:
+                    return {"id": pid, "name": name, "hex": hex_code, "h": h, "s": s, "l": l}
 
+    # 3. Fallback theo preset màu nhận diện K-Means
     return {
         "id": fallback_preset.get("id", "white"),
         "name": fallback_preset.get("name", "Trắng"),
@@ -403,14 +416,36 @@ def resolve_clothing_color_preset(
     }
 
 
-def classify_clothing_with_ollama(raw_bytes: bytes, color_name: str) -> dict | None:
+def classify_clothing_with_ollama(
+    raw_bytes: bytes,
+    color_name: str,
+    transparent_image: Image.Image | None = None,
+) -> dict | None:
     """Phân loại và thẩm định trang phục bằng mô hình đa phương thức cục bộ Gemma 4 (Ollama).
-    - Chạy offline hoàn toàn, không cần Gemini API key.
-    - Nhìn nhận chi tiết: Áo, Quần, Váy, Giày từ đặc điểm hình ảnh (cổ áo, khóa kéo, ống quần, đế giày...).
+    - Chạy offline hoàn toàn Local-First, không cần Gemini API key.
+    - Nhìn nhận chi tiết: Áo, Quần, Váy, Đầm, Giày từ đặc điểm hình ảnh.
     - Phát hiện nếu ảnh không phải quần áo để mặc (mặt người, đồ ăn, thú cưng, logo, vật dụng khác).
     """
     try:
-        b64_img = base64.b64encode(raw_bytes).decode("utf-8")
+        # Tối ưu hóa ảnh gửi vào AI: nếu đã có ảnh tách nền, dán lên nền trắng sạch để AI nhìn rõ nét
+        if transparent_image:
+            white_canvas = Image.new("RGB", transparent_image.size, (255, 255, 255))
+            if transparent_image.mode == "RGBA":
+                white_canvas.paste(transparent_image, mask=transparent_image.split()[3])
+            else:
+                white_canvas.paste(transparent_image)
+            buf = io.BytesIO()
+            white_canvas.thumbnail((640, 640), Image.Resampling.LANCZOS)
+            white_canvas.save(buf, format="JPEG", quality=85)
+            b64_img = base64.b64encode(buf.getvalue()).decode("utf-8")
+        else:
+            buf = io.BytesIO(raw_bytes)
+            img = Image.open(buf)
+            img.thumbnail((640, 640), Image.Resampling.LANCZOS)
+            out_buf = io.BytesIO()
+            img.convert("RGB").save(out_buf, format="JPEG", quality=85)
+            b64_img = base64.b64encode(out_buf.getvalue()).decode("utf-8")
+
         prompt = (
             "Bạn là chuyên gia thẩm định và phân loại thời trang cho ứng dụng tủ đồ Closy.\n"
             "Hãy nhìn vào bức ảnh này và phân tích thật kỹ:\n\n"
@@ -428,7 +463,7 @@ def classify_clothing_with_ollama(raw_bytes: bytes, color_name: str) -> dict | N
             '    "formality": 1 (thoải mái) hoặc 3 (lịch sự vừa) hoặc 5 (trang trọng),\n'
             '    "contexts": ["Đi học", "Đi làm", "Đi chơi", "Hẹn hò"] (chọn 1 đến 3 dịp phù hợp nhất)\n'
             "  }\n"
-            "Trả về DUY NHẤT một chuỗi JSON hợp lệ (không kèm markdown):"
+            "Chỉ trả về DUY NHẤT một chuỗi JSON hợp lệ (không kèm markdown):"
         )
 
         hosts_to_try = []
@@ -438,34 +473,70 @@ def classify_clothing_with_ollama(raw_bytes: bytes, color_name: str) -> dict | N
             if fallback not in hosts_to_try:
                 hosts_to_try.append(fallback)
 
-        payload = {
-            "model": OLLAMA_MODEL,
-            "prompt": prompt,
-            "images": [b64_img],
-            "stream": False,
-            "format": "json",
-            "options": {"temperature": 0.1},
-        }
+        models_to_try = [OLLAMA_MODEL]
+        if "gemma4" not in OLLAMA_MODEL:
+            models_to_try.append("gemma4:e4b")
+        if "gemma4:e4b" in models_to_try and "gemma4" not in models_to_try:
+            models_to_try.append("gemma4")
 
         for host in hosts_to_try:
-            url = f"{host}/api/generate"
-            try:
-                resp = requests.post(url, json=payload, timeout=25)
-                if resp.status_code == 200:
-                    data = resp.json()
-                    response_text = data.get("response", "").strip()
-                    parsed = json.loads(response_text)
+            for model_name in models_to_try:
+                url = f"{host}/api/generate"
+                payload = {
+                    "model": model_name,
+                    "prompt": prompt,
+                    "images": [b64_img],
+                    "stream": False,
+                    "format": "json",
+                    "options": {"temperature": 0.1},
+                }
+                try:
+                    resp = requests.post(url, json=payload, timeout=30)
+                    if resp.status_code == 200:
+                        data = resp.json()
+                        response_text = data.get("response", "").strip()
 
-                    # Kiểm tra xem có phải trang phục hay không
-                    if parsed.get("is_clothing") is False:
-                        return {
-                            "is_clothing": False,
-                            "rejection_reason": parsed.get("rejection_reason")
-                            or "Vui lòng chọn hoặc chụp ảnh trang phục để mặc (Áo, Quần, Váy, Giày)!",
-                        }
+                        # Xử lý chuỗi JSON nếu có bao quanh bởi markdown codeblock
+                        if "```" in response_text:
+                            blocks = response_text.split("```")
+                            for b in blocks:
+                                b = b.strip()
+                                if b.startswith("json"):
+                                    b = b[4:].strip()
+                                if b.startswith("{") and b.endswith("}"):
+                                    response_text = b
+                                    break
+                        if "{" in response_text and "}" in response_text:
+                            s_idx = response_text.find("{")
+                            e_idx = response_text.rfind("}") + 1
+                            response_text = response_text[s_idx:e_idx]
 
-                    cat = parsed.get("category")
-                    if cat in ["Áo", "Quần", "Váy", "Đầm", "Giày"]:
+                        parsed = json.loads(response_text)
+
+                        # Kiểm tra xem có phải trang phục hay không
+                        if parsed.get("is_clothing") is False:
+                            return {
+                                "is_clothing": False,
+                                "rejection_reason": parsed.get("rejection_reason")
+                                or "Vui lòng chọn hoặc chụp ảnh trang phục để mặc (Áo, Quần, Váy, Giày)!",
+                            }
+
+                        raw_cat = str(parsed.get("category", "")).strip()
+                        # Chuẩn hóa danh mục
+                        cat = "Áo"
+                        if "quần" in raw_cat.lower() or "jean" in raw_cat.lower():
+                            cat = "Quần"
+                        elif "đầm" in raw_cat.lower():
+                            cat = "Đầm"
+                        elif "váy" in raw_cat.lower() or "skirt" in raw_cat.lower():
+                            cat = "Váy"
+                        elif "giày" in raw_cat.lower() or "dép" in raw_cat.lower() or "shoe" in raw_cat.lower():
+                            cat = "Giày"
+                        elif "áo" in raw_cat.lower():
+                            cat = "Áo"
+                        elif raw_cat in ["Áo", "Quần", "Váy", "Đầm", "Giày"]:
+                            cat = raw_cat
+
                         return {
                             "is_clothing": True,
                             "category": cat,
@@ -478,79 +549,10 @@ def classify_clothing_with_ollama(raw_bytes: bytes, color_name: str) -> dict | N
                                 if c in ["Đi học", "Đi làm", "Đi chơi", "Hẹn hò"]
                             ] or ["Đi học", "Đi làm"],
                         }
-            except Exception:
-                continue
+                except Exception:
+                    continue
     except Exception as e:
         print(f"[Ollama] Lỗi nhận diện trang phục: {e}")
-    return None
-
-
-def classify_clothing_with_gemini(raw_bytes: bytes, color_name: str) -> dict | None:
-    """Nhận diện loại trang phục, tên gọi chi tiết, độ lịch sự và dịp mặc bằng Gemini Vision API."""
-    if not GEMINI_API_KEY:
-        return None
-    try:
-        b64_img = base64.b64encode(raw_bytes).decode("utf-8")
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={GEMINI_API_KEY}"
-        payload = {
-            "contents": [
-                {
-                    "parts": [
-                        {
-                            "text": (
-                                "Bạn là chuyên gia thời trang stylist thông minh cho ứng dụng tủ đồ Closy. "
-                                "Hãy nhìn vào bức ảnh này và phân tích thật chính xác:\n"
-                                "1. KIỂM TRA: Bức ảnh có chứa trang phục để mặc (Áo, Quần, Váy, Giày) không? "
-                                "Nếu không phải, trả về: {\"is_clothing\": false, \"rejection_reason\": \"Vui lòng chọn hoặc chụp ảnh trang phục để mặc (Áo, Quần, Váy, Giày)!\"}.\n"
-                                "2. Nếu đúng là đồ mặc, trả về JSON:\n"
-                                "{\n"
-                                '  "is_clothing": true,\n'
-                                '  "category": "Áo" hoặc "Quần" hoặc "Váy" hoặc "Đầm" hoặc "Giày",\n'
-                                '  "name": "Tên chi tiết món đồ tiếng Việt (VD: Áo sơ mi lụa trắng, Quần jeans xanh đậm...)",\n'
-                                '  "formality": 1 hoặc 3 hoặc 5,\n'
-                                '  "contexts": ["Đi học", "Đi làm", "Đi chơi", "Hẹn hò"]\n'
-                                "}"
-                            )
-                        },
-                        {
-                            "inline_data": {
-                                "mime_type": "image/png",
-                                "data": b64_img,
-                            }
-                        },
-                    ]
-                }
-            ],
-            "generationConfig": {
-                "temperature": 0.2,
-                "response_mime_type": "application/json",
-            },
-        }
-        resp = requests.post(url, json=payload, timeout=8)
-        if resp.status_code == 200:
-            data = resp.json()
-            text = data["candidates"][0]["content"]["parts"][0]["text"].strip()
-            parsed = json.loads(text)
-            if parsed.get("is_clothing") is False:
-                return {
-                    "is_clothing": False,
-                    "rejection_reason": parsed.get("rejection_reason")
-                    or "Vui lòng chọn hoặc chụp ảnh trang phục để mặc (Áo, Quần, Váy, Giày)!",
-                }
-            if parsed.get("category") in ["Áo", "Quần", "Váy", "Đầm", "Giày"]:
-                return {
-                    "is_clothing": True,
-                    "category": parsed["category"],
-                    "name": parsed.get("name") or f"{parsed['category']} {color_name}",
-                    "formality": int(parsed.get("formality", 3)),
-                    "contexts": [
-                        c
-                        for c in parsed.get("contexts", [])
-                        if c in ["Đi học", "Đi làm", "Đi chơi", "Hẹn hò"]
-                    ] or ["Đi học", "Đi làm"],
-                }
-    except Exception as e:
-        print(f"Lưu ý gọi Gemini Vision: {e}")
     return None
 
 
@@ -626,12 +628,8 @@ async def process_image(
     palette = color_res["palette"]
 
     # 6. Nhận diện danh mục, tên gợi ý, độ lịch sự và dịp mặc bằng AI
-    # Ưu tiên 1: Mô hình đa phương thức cục bộ Gemma 4 e4b (Ollama)
-    classification = classify_clothing_with_ollama(raw_bytes, primary["name"])
-
-    # Ưu tiên 2: Gemini Vision API (nếu có cấu hình GEMINI_API_KEY)
-    if not classification:
-        classification = classify_clothing_with_gemini(raw_bytes, primary["name"])
+    # Ưu tiên 1: Mô hình đa phương thức cục bộ Gemma 4 e4b (Ollama Local-First)
+    classification = classify_clothing_with_ollama(raw_bytes, primary["name"], transparent_image)
 
     # Kiểm tra xem ảnh có phải trang phục để mặc hay không
     if classification and classification.get("is_clothing") is False:
@@ -790,6 +788,91 @@ def calculate_item_weather_score(name: str, category: str, color_name: str, weat
     return score
 
 
+def calculate_item_context_score(item: WardrobeItemPayload, context: str) -> tuple[int, str]:
+    """Chấm điểm độ phù hợp của món đồ theo từng dịp cụ thể (Đi học, Đi làm, Đi chơi, Hẹn hò):
+    Đảm bảo mỗi dịp có sự phân hóa rõ rệt, không bị trùng lặp cùng 1 bộ cho mọi dịp.
+    """
+    score = 0
+    name_lower = (item.name or "").lower()
+    cat = (item.category or "").strip()
+    color_lower = (item.color_name or "").lower()
+    formality = item.formality or 3
+    ctx_str = (context or "").lower()
+    reason = ""
+
+    # 1. Kiểm tra nhãn bối cảnh người dùng/AI đã gán
+    raw_ctxs = item.contexts if isinstance(item.contexts, list) else (item.contexts or "").split(",")
+    clean_ctxs = [str(c).strip().lower() for c in raw_ctxs if str(c).strip()]
+    has_explicit_context = any(ctx_str in c for c in clean_ctxs)
+
+    if has_explicit_context:
+        score += 45
+    elif clean_ctxs and not any("mọi dịp" in c for c in clean_ctxs):
+        score -= 25
+
+    # 2. Quy tắc chuyên biệt theo từng dịp
+    if "đi làm" in ctx_str or "công sở" in ctx_str:
+        if formality == 3:
+            score += 25
+        elif formality == 5:
+            score += 30
+        elif formality == 1:
+            score -= 35
+
+        if any(k in name_lower for k in ["sơ mi", "polo", "tây", "kaki", "âu", "vest", "blazer", "công sở", "bút chì"]):
+            score += 35
+            reason = "Lịch sự, chuyên nghiệp nơi công sở"
+        if any(k in name_lower for k in ["croptop", "ba lỗ", "short", "rách", "ngắn"]):
+            score -= 45
+
+    elif "hẹn hò" in ctx_str or "tiệc" in ctx_str:
+        if cat == "Đầm":
+            score += 45
+            reason = "Đầm liền duyên dáng, nữ tính cho buổi hẹn"
+        elif cat == "Váy":
+            score += 30
+            reason = "Chân váy nữ tính, cuốn hút"
+
+        if formality in [3, 5]:
+            score += 20
+        elif formality == 1:
+            score -= 25
+
+        if any(k in color_lower for k in ["hồng", "kem", "đỏ", "trắng", "đen", "pastel"]):
+            score += 20
+
+        if any(k in name_lower for k in ["đầm", "lụa", "ren", "hoa", "xòe", "sơ mi", "chân váy"]):
+            score += 25
+        if any(k in name_lower for k in ["short thể thao", "ba lỗ"]):
+            score -= 40
+
+    elif "đi học" in ctx_str:
+        if formality in [1, 3]:
+            score += 25
+        elif formality == 5:
+            score -= 35
+
+        if any(k in name_lower for k in ["thun", "phông", "sơ mi", "jeans", "kaki", "sneaker", "hoodie", "cardigan"]):
+            score += 30
+            reason = "Gọn gàng, trẻ trung khi lên giảng đường"
+        if any(k in name_lower for k in ["dạ hội", "xẻ tà"]):
+            score -= 45
+
+    elif "đi chơi" in ctx_str or "dạo phố" in ctx_str:
+        if formality in [1, 3]:
+            score += 30
+        elif formality == 5:
+            score -= 30
+
+        if any(k in name_lower for k in ["thun", "phông", "croptop", "short", "jeans", "khoác", "chân váy", "sneaker"]):
+            score += 35
+            reason = "Thoải mái, phóng khoáng cho ngày dạo phố"
+        if any(k in name_lower for k in ["vest", "âu", "công sở"]):
+            score -= 25
+
+    return score, reason
+
+
 def is_dress_item(item: WardrobeItemPayload) -> bool:
     cat = (item.category or "").strip()
     name_lower = (item.name or "").lower()
@@ -858,12 +941,9 @@ def suggest_outfits(body: OutfitSuggestRequest):
         d_color = {"h": d.color_h, "s": d.color_s, "l": d.color_l}
         score = 50
         weather_score = calculate_item_weather_score(d.name, "Đầm", d.color_name or "", weather)
-        score += weather_score
+        ctx_score, ctx_reason = calculate_item_context_score(d, context)
 
-        # Điểm bối cảnh
-        ctxs = d.contexts if isinstance(d.contexts, list) else (d.contexts or "").split(",")
-        if any(context.lower() in str(c).lower() for c in ctxs):
-            score += 20
+        score += weather_score + ctx_score
 
         # Phối giày (nếu có)
         outfit_items = [d]
@@ -874,7 +954,6 @@ def suggest_outfits(body: OutfitSuggestRequest):
 
         best_shoe = None
         if shoes:
-            # Chọn đôi giày hòa hợp nhất
             best_shoe = shoes[0]
             for s in shoes:
                 s_color = {"h": s.color_h, "s": s.color_s, "l": s.color_l}
@@ -900,6 +979,20 @@ def suggest_outfits(body: OutfitSuggestRequest):
 
         score += harmony_score * 10
 
+        # Tiêu đề phù hợp theo từng dịp
+        if "hẹn hò" in context.lower():
+            title = f"Duyên dáng hẹn hò · {d.name}"
+            sub = f"Đầm liền {d.color_name or ''} nữ tính, cuốn hút"
+        elif "đi làm" in context.lower():
+            title = f"Thanh lịch công sở · {d.name}"
+            sub = f"Đầm liền {d.color_name or ''} chỉn chu, trang nhã"
+        elif "đi chơi" in context.lower():
+            title = f"Thoải mái dạo phố · {d.name}"
+            sub = f"Đầm liền {d.color_name or ''} nhẹ nhàng, bay bổng"
+        else:
+            title = f"Trẻ trung đến trường · {d.name}"
+            sub = f"Đầm liền {d.color_name or ''} gọn gàng, thanh lịch"
+
         candidates.append({
             "type": "one_piece",
             "score": score,
@@ -907,8 +1000,9 @@ def suggest_outfits(body: OutfitSuggestRequest):
             "harmony_type": harmony_type,
             "harmony_title": harmony_title,
             "harmony_badge": harmony_badge,
-            "title": f"Duyên dáng {d.name} · {context}",
-            "subtitle": f"Đầm liền {d.color_name or ''} thanh lịch, nhẹ nhàng",
+            "occasion_reason": ctx_reason or f"Phù hợp cho dịp {context}",
+            "title": title,
+            "subtitle": sub,
             "items": [
                 {
                     "id": it.id,
@@ -927,43 +1021,40 @@ def suggest_outfits(body: OutfitSuggestRequest):
     for top in tops:
         top_color = {"h": top.color_h, "s": top.color_s, "l": top.color_l}
         top_w_score = calculate_item_weather_score(top.name, top.category, top.color_name or "", weather)
+        top_ctx_score, top_reason = calculate_item_context_score(top, context)
 
         for bot in bottoms:
             bot_color = {"h": bot.color_h, "s": bot.color_s, "l": bot.color_l}
             bot_w_score = calculate_item_weather_score(bot.name, bot.category, bot.color_name or "", weather)
+            bot_ctx_score, bot_reason = calculate_item_context_score(bot, context)
 
             # Chấm điểm hòa hợp màu sắc ColorHarmonyEngine HSL
             hs, ht, h_title, h_badge = score_color_harmony_hsl(top_color, bot_color)
 
-            score = 50 + (hs * 10) + top_w_score + bot_w_score
-
-            # Bối cảnh
-            top_ctxs = top.contexts if isinstance(top.contexts, list) else (top.contexts or "").split(",")
-            bot_ctxs = bot.contexts if isinstance(bot.contexts, list) else (bot.contexts or "").split(",")
-            if any(context.lower() in str(c).lower() for c in top_ctxs):
-                score += 10
-            if any(context.lower() in str(c).lower() for c in bot_ctxs):
-                score += 10
+            # Điểm tổng hợp: Bối cảnh chiếm trọng số cao nhất để dịp nào ra đúng đồ dịp đó!
+            score = 50 + (top_ctx_score + bot_ctx_score) + (hs * 10) + top_w_score + bot_w_score
 
             outfit_items = [top, bot]
 
-            # Giày
             if shoes:
                 outfit_items.append(shoes[0])
 
-            # Đặt tiêu đề và phụ đề dựa trên thời tiết và loại hòa hợp màu
-            is_cold_or_rain = weather.temperature < 22 or weather.is_raining
-            is_hot = weather.temperature > 32
-
-            if is_cold_or_rain:
-                title = f"Ấm áp ngày lạnh · {context}" if not weather.is_raining else f"Gọn gàng ngày mưa · {context}"
-                subtitle = f"{top.color_name or 'Áo'} + {bot.color_name or 'Quần'} · {h_badge}"
-            elif is_hot:
-                title = f"Thoáng mát mùa hè · {context}"
-                subtitle = f"{top.color_name or 'Áo'} + {bot.color_name or 'Quần'} · {h_badge}"
+            # Đặt tiêu đề và lý do theo ngữ cảnh
+            ctx_lower = context.lower()
+            if "đi làm" in ctx_lower:
+                title = f"Chỉn chu công sở · {top.name}"
+                reason = "Lịch thiệp, chuẩn phong cách văn phòng"
+            elif "hẹn hò" in ctx_lower:
+                title = f"Cuốn hút hẹn hò · {top.name}"
+                reason = "Trẻ trung, quyến rũ cho buổi gặp gỡ"
+            elif "đi chơi" in ctx_lower:
+                title = f"Phóng khoáng dạo phố · {top.name}"
+                reason = "Năng động, thoải mái khi xuống phố"
             else:
-                title = f"Năng động {context.lower()}"
-                subtitle = f"{top.color_name or 'Áo'} + {bot.color_name or 'Quần'} · {h_badge}"
+                title = f"Năng động giảng đường · {top.name}"
+                reason = "Gọn gàng, chỉn chu khi đi học"
+
+            subtitle = f"{top.color_name or 'Áo'} + {bot.color_name or 'Đồ dưới'} · {h_badge}"
 
             candidates.append({
                 "type": "two_piece",
@@ -972,6 +1063,7 @@ def suggest_outfits(body: OutfitSuggestRequest):
                 "harmony_type": ht,
                 "harmony_title": h_title,
                 "harmony_badge": h_badge,
+                "occasion_reason": reason,
                 "title": title,
                 "subtitle": subtitle,
                 "items": [
@@ -990,8 +1082,8 @@ def suggest_outfits(body: OutfitSuggestRequest):
     # Sắp xếp các bộ phối theo điểm số giảm dần
     candidates.sort(key=lambda x: x["score"], reverse=True)
 
-    # Lấy top 5 gợi ý tốt nhất
-    top_suggestions = candidates[:5]
+    # Lấy tối đa 8 gợi ý phong phú để người dùng tha hồ lựa chọn
+    top_suggestions = candidates[:8]
 
     return {
         "success": True,

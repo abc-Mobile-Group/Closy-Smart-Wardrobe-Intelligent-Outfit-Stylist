@@ -186,6 +186,18 @@ export default function ItemDetailModal({
                           setCategory(cat.id);
                           if (name.startsWith(oldCat)) {
                             setName((prev) => prev.replace(new RegExp(`^${oldCat}`), cat.id));
+                          } else {
+                            let replaced = false;
+                            for (const otherCat of CATEGORIES) {
+                              if (name.startsWith(otherCat.id)) {
+                                setName((prev) => prev.replace(new RegExp(`^${otherCat.id}`), cat.id));
+                                replaced = true;
+                                break;
+                              }
+                            }
+                            if (!replaced && (!name || name.trim() === '')) {
+                              setName(`${cat.id} ${colorName.toLowerCase()}`);
+                            }
                           }
                         }}
                       >
@@ -226,6 +238,17 @@ export default function ItemDetailModal({
                             setName((prev) =>
                               prev.replace(new RegExp(oldColor, 'i'), c.name.toLowerCase()),
                             );
+                          } else if (/cam/i.test(name)) {
+                            setName((prev) => prev.replace(/cam/i, c.name.toLowerCase()));
+                          } else {
+                            for (const pal of COLOR_PALETTE) {
+                              if (name.toLowerCase().includes(pal.name.toLowerCase())) {
+                                setName((prev) =>
+                                  prev.replace(new RegExp(pal.name, 'i'), c.name.toLowerCase()),
+                                );
+                                break;
+                              }
+                            }
                           }
                         }}
                       >

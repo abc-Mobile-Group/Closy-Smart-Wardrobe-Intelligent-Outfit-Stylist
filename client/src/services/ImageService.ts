@@ -11,7 +11,7 @@ export type ProcessImageResult = {
   processTimeSec?: number;
   errorMessage?: string;
   isFallback?: boolean;
-  category?: 'Áo' | 'Quần' | 'Váy' | 'Giày';
+  category?: 'Áo' | 'Quần' | 'Váy' | 'Giày' | 'Đầm';
   name?: string;
   formality?: 1 | 3 | 5;
   contexts?: string[];
