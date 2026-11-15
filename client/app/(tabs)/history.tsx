@@ -81,34 +81,35 @@ export default function HistoryScreen() {
           {/* Weekday Labels */}
           <View style={styles.weekRow}>
             {DAYS_OF_WEEK.map((day) => (
-              <Text key={day} style={styles.weekText}>
-                {day}
-              </Text>
+              <View key={day} style={styles.weekCol}>
+                <Text style={styles.weekText}>{day}</Text>
+              </View>
             ))}
           </View>
 
           {/* Month Grid */}
           <View style={styles.daysGrid}>
-            {/* Empty slots for start of month (Tháng 10 bắt đầu từ Thứ Năm: T2, T3, T4 trống) */}
-            <View style={styles.dayCell} />
-            <View style={styles.dayCell} />
-            <View style={styles.dayCell} />
+            {/* Empty slots for start of month (Tháng 10/2026 bắt đầu từ Thứ Năm: T2, T3, T4 trống) */}
+            <View style={styles.dayCellWrapper} />
+            <View style={styles.dayCellWrapper} />
+            <View style={styles.dayCellWrapper} />
 
             {Array.from({ length: 31 }, (_, i) => i + 1).map((day) => {
               const isSelected = selectedDay === day;
               const hasWorn = WORN_DAYS.includes(day);
 
               return (
-                <Pressable
-                  key={day}
-                  style={[styles.dayCell, isSelected && styles.dayCellSelected]}
-                  onPress={() => setSelectedDay(day)}
-                >
-                  <Text style={[styles.dayText, isSelected && styles.dayTextSelected]}>
-                    {day}
-                  </Text>
-                  {hasWorn && !isSelected && <View style={styles.wornDot} />}
-                </Pressable>
+                <View key={day} style={styles.dayCellWrapper}>
+                  <Pressable
+                    style={[styles.dayCell, isSelected && styles.dayCellSelected]}
+                    onPress={() => setSelectedDay(day)}
+                  >
+                    <Text style={[styles.dayText, isSelected && styles.dayTextSelected]}>
+                      {day}
+                    </Text>
+                    {hasWorn && !isSelected && <View style={styles.wornDot} />}
+                  </Pressable>
+                </View>
               );
             })}
           </View>
@@ -240,20 +241,29 @@ const styles = StyleSheet.create({
   calendarMonth: { fontSize: 15, fontWeight: '700', color: colors.text },
   weekRow: {
     flexDirection: 'row',
-    justifyContent: 'space-around',
     marginTop: spacing.xs,
   },
-  weekText: { fontSize: 11, fontWeight: '600', color: colors.textLight, width: 32, textAlign: 'center' },
+  weekCol: {
+    width: '14.285%',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  weekText: { fontSize: 11, fontWeight: '600', color: colors.textLight, textAlign: 'center' },
   daysGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    justifyContent: 'space-around',
-    rowGap: 4,
+    rowGap: 6,
+  },
+  dayCellWrapper: {
+    width: '14.285%',
+    alignItems: 'center',
+    justifyContent: 'center',
+    height: 36,
   },
   dayCell: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
+    width: 32,
+    height: 32,
+    borderRadius: 16,
     alignItems: 'center',
     justifyContent: 'center',
   },

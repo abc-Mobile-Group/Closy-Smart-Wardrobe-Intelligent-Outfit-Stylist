@@ -1,64 +1,295 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import {
+  ActivityIndicator,
+  Alert,
   Image,
   Pressable,
   ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   View,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
+import * as ImagePicker from 'expo-image-picker';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors, radius, spacing } from '../src/constants/theme';
 import { SEED_ITEMS } from '../src/constants/seedData';
+import { ImageService } from '../src/services/ImageService';
+import { ProcessedColor } from '../src/api/endpoints';
+import { Category, Formality } from '../src/types/item';
+import { useWardrobeStore } from '../src/store/wardrobeStore';
 
-const INPUT_METHODS = [
-  { id: 'camera', label: 'Chụp ảnh', icon: 'camera-outline' },
-  { id: 'gallery', label: 'Thư viện ảnh', icon: 'images-outline' },
-  { id: 'presets', label: 'Mẫu cơ bản', icon: 'layers-outline' },
-] as const;
-
-const COLOR_PALETTE = [
-  { id: 'white', name: 'Trắng', hex: '#FFFFFF', border: '#E2E8F0' },
-  { id: 'cream', name: 'Kem', hex: '#F5F2EB' },
-  { id: 'navy', name: 'Xanh đậm', hex: '#243A63' },
-  { id: 'olive', name: 'Ô liu', hex: '#636F4E' },
-  { id: 'black', name: 'Đen', hex: '#1E293B' },
-  { id: 'dusty-pink', name: 'Hồng phấn', hex: '#D29B9B' },
+// 4 Danh mục chuẩn: Áo, Quần, Váy, Giày
+const CATEGORIES: { id: Category; label: string; icon: any }[] = [
+  { id: 'Áo', label: 'Áo', icon: 'shirt-outline' },
+  { id: 'Quần', label: 'Quần', icon: 'file-tray-outline' },
+  { id: 'Váy', label: 'Váy', icon: 'woman-outline' },
+  { id: 'Giày', label: 'Giày', icon: 'footsteps-outline' },
 ];
 
-const OCCASIONS = ['Đi học', 'Đi làm', 'Đi chơi', 'Hẹn hò'] as const;
+// Formality (Độ lịch sự): 1, 3, 5
+const FORMALITY_LEVELS: { value: Formality; label: string; desc: string }[] = [
+  { value: 1, label: '1 · Thoải mái', desc: 'Casual, mặc ở nhà / dạo phố' },
+  { value: 3, label: '3 · Lịch sự vừa', desc: 'Smart Casual, đi học / công sở' },
+  { value: 5, label: '5 · Trang trọng', desc: 'Formal, tiệc / gặp đối tác' },
+];
+
+// Contexts (Bối cảnh): Đi học, Đi làm, Đi chơi, Hẹn hò
+const CONTEXT_OPTIONS = ['Đi học', 'Đi làm', 'Đi chơi', 'Hẹn hò'] as const;
+
+// Bảng màu chuẩn của ứng dụng Closy
+const COLOR_PALETTE = [
+  { id: 'white', name: 'Trắng', hex: '#FFFFFF', border: '#E2E8F0', h: 0, s: 0, l: 100 },
+  { id: 'cream', name: 'Kem', hex: '#F5F2EB', border: '#E2E8F0', h: 42, s: 35, l: 94 },
+  { id: 'dusty-pink', name: 'Hồng phấn', hex: '#D29B9B', h: 0, s: 38, l: 72 },
+  { id: 'navy', name: 'Xanh đậm', hex: '#243A63', h: 219, s: 47, l: 26 },
+  { id: 'olive', name: 'Ô liu', hex: '#636F4E', h: 82, s: 17, l: 37 },
+  { id: 'black', name: 'Đen', hex: '#1E293B', h: 222, s: 47, l: 11 },
+  { id: 'gray', name: 'Xám', hex: '#808080', h: 0, s: 0, l: 50 },
+  { id: 'brown', name: 'Nâu', hex: '#795548', h: 16, s: 25, l: 38 },
+  { id: 'blue', name: 'Xanh dương', hex: '#2196F3', h: 207, s: 90, l: 54 },
+  { id: 'red', name: 'Đỏ', hex: '#E53935', h: 1, s: 79, l: 56 },
+  { id: 'yellow', name: 'Vàng', hex: '#FDD835', h: 48, s: 98, l: 59 },
+];
 
 export default function AddItemScreen() {
   const router = useRouter();
-  const [selectedMethod, setSelectedMethod] = useState<string>('gallery');
-  const [selectedColor, setSelectedColor] = useState<string>('white');
-  const [selectedOccasions, setSelectedOccasions] = useState<string[]>(['Đi học', 'Đi làm']);
-  const [itemType, setItemType] = useState('Áo · Sơ mi');
+  const addItemToStore = useWardrobeStore((state) => state.addItem);
 
-  const previewShirt = SEED_ITEMS.find((i) => i.id === '2');
+  // 1. Quản lý ảnh & AI
+  const defaultItem = SEED_ITEMS.find((i) => i.id === '2');
+  const [currentImageUri, setCurrentImageUri] = useState<string | null>(null);
+  const [isProcessingImage, setIsProcessingImage] = useState(false);
+  const [isAiTransparent, setIsAiTransparent] = useState(false);
+  const [aiDetectedColor, setAiDetectedColor] = useState<ProcessedColor | null>(null);
+  const [selectedColorId, setSelectedColorId] = useState<string>('white');
 
-  const toggleOccasion = (occ: string) => {
-    setSelectedOccasions((prev) =>
-      prev.includes(occ) ? prev.filter((o) => o !== occ) : [...prev, occ],
+
+  // Màu sắc hiện thời đang chọn: Đồng nhất 100% trên toàn bộ giao diện và cơ sở dữ liệu
+  const activeColor = useMemo(() => {
+    return COLOR_PALETTE.find((c) => c.id === selectedColorId) || COLOR_PALETTE[0];
+  }, [selectedColorId]);
+
+  // 2. Thuộc tính trang phục (DoD)
+  const [itemName, setItemName] = useState<string>('Sơ mi trắng');
+  const [category, setCategory] = useState<Category>('Áo');
+  const [formality, setFormality] = useState<Formality>(3); // Mặc định 3: Lịch sự vừa
+  const [selectedContexts, setSelectedContexts] = useState<string[]>(['Đi học', 'Đi làm']);
+  const [isSaving, setIsSaving] = useState(false);
+
+  /**
+   * Bật/tắt bối cảnh (Multi-select)
+   */
+  const toggleContext = (ctx: string) => {
+    setSelectedContexts((prev) =>
+      prev.includes(ctx) ? prev.filter((c) => c !== ctx) : [...prev, ctx],
     );
   };
 
-  const handleSave = () => {
-    // Lưu và chuyển về tủ đồ
-    router.replace('/(tabs)/wardrobe');
+  /**
+   * Xử lý ảnh sau khi chụp/chọn: Nén cạnh dài 800px & tách nền AI
+   */
+  const processImageUri = async (rawUri: string) => {
+    setIsProcessingImage(true);
+    try {
+      const result = await ImageService.processClothingImage(rawUri);
+
+      // Thẩm định AI: Nếu ảnh không phải là trang phục để mặc
+      if (result.isClothing === false) {
+        Alert.alert(
+          'Không nhận diện được trang phục',
+          result.rejectionReason ||
+            'Vui lòng chọn hoặc chụp ảnh trang phục để mặc (Áo, Quần, Váy, Giày)!',
+        );
+        return;
+      }
+
+      setCurrentImageUri(result.uri);
+      setIsAiTransparent(result.isTransparent);
+
+      if (result.color) {
+        setAiDetectedColor(result.color);
+        // Tự động map màu nhận diện AI vào bảng màu
+        let match = COLOR_PALETTE.find((c) => c.id === result.color?.closest_palette_id);
+
+        // Khớp màu theo ngữ nghĩa trong tên gọi do AI gợi ý (vd: "xanh ô liu", "hồng pastel", "xanh đậm")
+        // giúp loại bỏ hoàn toàn việc bị màu tóc hay nền che khuất màu trang phục thực tế
+        if (result.name) {
+          const lowerName = result.name.toLowerCase();
+          const matchByName = COLOR_PALETTE.find((c) => {
+            if (c.id === 'olive' && (lowerName.includes('ô liu') || lowerName.includes('o liu') || lowerName.includes('rêu') || lowerName.includes('olive'))) return true;
+            if (c.id === 'dusty-pink' && (lowerName.includes('hồng') || lowerName.includes('pink') || lowerName.includes('pastel'))) return true;
+            if (c.id === 'cream' && (lowerName.includes('kem') || lowerName.includes('be') || lowerName.includes('beige'))) return true;
+            if (c.id === 'navy' && (lowerName.includes('xanh đậm') || lowerName.includes('navy') || lowerName.includes('denim'))) return true;
+            if (c.id === 'blue' && (lowerName.includes('xanh dương') || lowerName.includes('xanh biển') || lowerName.includes('da trời'))) return true;
+            if (c.id === 'black' && lowerName.includes('đen')) return true;
+            if (c.id === 'white' && lowerName.includes('trắng')) return true;
+            if (c.id === 'brown' && lowerName.includes('nâu')) return true;
+            if (c.id === 'gray' && (lowerName.includes('xám') || lowerName.includes('ghi'))) return true;
+            if (c.id === 'red' && lowerName.includes('đỏ')) return true;
+            if (c.id === 'yellow' && lowerName.includes('vàng')) return true;
+            return false;
+          });
+          if (matchByName) {
+            match = matchByName;
+          }
+        }
+
+        if (match) {
+          setSelectedColorId(match.id);
+        }
+      }
+
+      // 1. Tự động cập nhật Loại trang phục (Áo / Quần / Váy / Giày)
+      const currentCat = result.category || category;
+      if (result.category) {
+        setCategory(result.category);
+      }
+
+      // 2. Tự động cập nhật Tên món đồ chi tiết do AI gợi ý (đồng nhất với màu đã map)
+      const detectedColorName =
+        COLOR_PALETTE.find((c) => c.id === result.color?.closest_palette_id)?.name ||
+        result.color?.name ||
+        'mới';
+
+      if (result.name) {
+        setItemName(result.name);
+      } else {
+        setItemName(`${currentCat} ${detectedColorName.toLowerCase()}`);
+      }
+
+      // 3. Tự động cập nhật Độ lịch sự (Formality: 1 | 3 | 5)
+      if (result.formality) {
+        setFormality(result.formality);
+      }
+
+      // 4. Tự động cập nhật Dịp mặc phù hợp (Đi học, Đi làm, Đi chơi, Hẹn hò)
+      if (result.contexts && result.contexts.length > 0) {
+        setSelectedContexts(result.contexts);
+      }
+    } catch (e: any) {
+      console.warn('Lỗi khi xử lý ảnh:', e);
+      setCurrentImageUri(rawUri);
+      setIsAiTransparent(false);
+    } finally {
+      setIsProcessingImage(false);
+    }
+  };
+
+  /**
+   * Chạm 1A: Chụp ảnh từ Camera
+   */
+  const handleCameraCapture = async () => {
+    try {
+      const perm = await ImagePicker.requestCameraPermissionsAsync();
+      if (!perm.granted) {
+        Alert.alert('Quyền truy cập', 'Closy cần quyền máy ảnh để chụp trang phục của bạn.');
+        return;
+      }
+
+      const res = await ImagePicker.launchCameraAsync({
+        allowsEditing: true,
+        quality: 0.85,
+      });
+
+      if (!res.canceled && res.assets && res.assets.length > 0) {
+        await processImageUri(res.assets[0].uri);
+      }
+    } catch (e: any) {
+      Alert.alert('Lỗi', 'Không thể mở máy ảnh: ' + (e?.message || ''));
+    }
+  };
+
+  /**
+   * Chạm 1B: Chọn ảnh từ Thư viện
+   */
+  const handleGalleryPick = async () => {
+    try {
+      const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (!perm.granted) {
+        Alert.alert('Quyền truy cập', 'Closy cần quyền truy cập thư viện để chọn ảnh trang phục.');
+        return;
+      }
+
+      const res = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ['images'],
+        allowsEditing: true,
+        quality: 0.85,
+      });
+
+      if (!res.canceled && res.assets && res.assets.length > 0) {
+        await processImageUri(res.assets[0].uri);
+      }
+    } catch (e: any) {
+      Alert.alert('Lỗi', 'Không thể mở thư viện: ' + (e?.message || ''));
+    }
+  };
+
+  /**
+   * Chọn mẫu cơ bản có sẵn
+   */
+  const handlePresetPick = () => {
+    setCurrentImageUri(null);
+    setIsAiTransparent(true);
+    setAiDetectedColor(null);
+    setSelectedColorId('white');
+    setCategory('Áo');
+    setItemName('Sơ mi trắng');
+  };
+
+  /**
+   * Chạm cuối: Bấm "Lưu vào tủ đồ" thêm bản ghi vào SQLite và chuyển về tab Tủ đồ
+   */
+  const handleSaveToWardrobe = async () => {
+    if (isSaving || isProcessingImage) return;
+
+    // Xác định màu sắc: Luôn ghi nhận 100% theo màu người dùng chọn trên giao diện
+    const color_h = activeColor.h;
+    const color_s = activeColor.s;
+    const color_l = activeColor.l;
+    const color_hex = activeColor.hex;
+    const color_name = activeColor.name;
+
+    // Đường dẫn ảnh: ưu tiên ảnh chụp/chọn, nếu không dùng ảnh mẫu
+    const defaultUri = defaultItem ? Image.resolveAssetSource(defaultItem.image)?.uri || '' : '';
+    const imagePath = currentImageUri || defaultUri;
+
+    setIsSaving(true);
+    try {
+      await addItemToStore({
+        name: itemName.trim() || `${category} ${color_name.toLowerCase()}`,
+        category,
+        image_path: imagePath,
+        color_h,
+        color_s,
+        color_l,
+        color_hex,
+        color_name,
+        formality,
+        contexts: selectedContexts.length > 0 ? selectedContexts : ['Mọi dịp'],
+      });
+
+      // Chuyển hướng về tab Tủ đồ
+      router.replace('/(tabs)/wardrobe');
+    } catch (error: any) {
+      Alert.alert('Lỗi lưu trang phục', error?.message || 'Không thể lưu vào tủ đồ. Vui lòng thử lại.');
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   return (
     <SafeAreaView style={styles.safeArea} edges={['top', 'bottom']}>
+      {/* Header */}
       <View style={styles.header}>
         <Pressable onPress={() => router.back()} hitSlop={12} style={styles.backBtn}>
           <Ionicons name="arrow-back" size={24} color={colors.text} />
         </Pressable>
         <View style={styles.headerTitleGroup}>
           <Text style={styles.headerTitle}>Thêm món đồ</Text>
-          <Text style={styles.headerSubtitle}>Một món mới, thêm cách phối</Text>
+          <Text style={styles.headerSubtitle}>Tối đa 4 chạm · Tự động tách nền & lưu SQLite</Text>
         </View>
       </View>
 
@@ -67,77 +298,200 @@ export default function AddItemScreen() {
         contentContainerStyle={styles.content}
         showsVerticalScrollIndicator={false}
       >
-        {/* Method selector */}
+        {/* BƯỚC 1: Chọn hoặc chụp ảnh (Chạm 1) */}
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Bạn muốn thêm bằng cách nào?</Text>
+          <Text style={styles.sectionTitle}>1. Chọn hình ảnh</Text>
           <View style={styles.methodRow}>
-            {INPUT_METHODS.map((m) => {
-              const active = selectedMethod === m.id;
+            <Pressable
+              style={styles.methodBtn}
+              onPress={handleCameraCapture}
+              disabled={isProcessingImage}
+            >
+              <Ionicons name="camera-outline" size={22} color={colors.primary} />
+              <Text style={styles.methodBtnText}>Chụp ảnh</Text>
+            </Pressable>
+
+            <Pressable
+              style={styles.methodBtn}
+              onPress={handleGalleryPick}
+              disabled={isProcessingImage}
+            >
+              <Ionicons name="images-outline" size={22} color={colors.primary} />
+              <Text style={styles.methodBtnText}>Thư viện</Text>
+            </Pressable>
+
+            <Pressable
+              style={styles.methodBtn}
+              onPress={handlePresetPick}
+              disabled={isProcessingImage}
+            >
+              <Ionicons name="layers-outline" size={22} color={colors.textMuted} />
+              <Text style={[styles.methodBtnText, { color: colors.textMuted }]}>Mẫu cơ bản</Text>
+            </Pressable>
+          </View>
+        </View>
+
+        {/* Khung xem trước ảnh (Preview) */}
+        <View style={[styles.previewCard, isAiTransparent && styles.previewCardTransparent]}>
+          <View style={styles.imageBox}>
+            {isProcessingImage ? (
+              <View style={styles.loadingBox}>
+                <ActivityIndicator size="large" color={colors.primary} />
+                <Text style={styles.loadingText}>Đang tách nền AI...</Text>
+              </View>
+            ) : currentImageUri ? (
+              <Image
+                source={{ uri: currentImageUri }}
+                style={styles.previewImg}
+                resizeMode="contain"
+              />
+            ) : defaultItem ? (
+              <Image source={defaultItem.image} style={styles.previewImg} resizeMode="contain" />
+            ) : null}
+
+            {isAiTransparent && !isProcessingImage && (
+              <View style={styles.aiBadge}>
+                <Ionicons name="sparkles" size={10} color="#FFFFFF" />
+                <Text style={styles.aiBadgeText}>AI Lookbook</Text>
+              </View>
+            )}
+          </View>
+
+          <View style={styles.previewInfo}>
+            <TextInput
+              style={styles.nameInput}
+              value={itemName}
+              onChangeText={setItemName}
+              placeholder="Nhập tên món đồ..."
+              placeholderTextColor={colors.textLight}
+            />
+            <Text style={styles.previewSub}>
+              {currentImageUri ? 'Ảnh chụp/tải lên' : 'Mẫu cơ bản'} · {category}
+            </Text>
+
+            {/* Huy hiệu màu sắc: Đồng bộ 100% theo activeColor người dùng hoặc AI chọn */}
+            <View style={styles.detectedColorBadge}>
+              <View
+                style={[
+                  styles.detectedColorDot,
+                  { backgroundColor: activeColor.hex },
+                  activeColor.border ? { borderWidth: 1, borderColor: activeColor.border } : null,
+                ]}
+              />
+              <Text style={styles.detectedColorText}>
+                {activeColor.name} ({activeColor.hex})
+              </Text>
+            </View>
+
+            <Pressable
+              style={styles.changeActionBtn}
+              onPress={handleGalleryPick}
+              disabled={isProcessingImage}
+            >
+              <Ionicons name="sync-outline" size={13} color={colors.primary} />
+              <Text style={styles.changeActionText}>Đổi ảnh khác</Text>
+            </Pressable>
+          </View>
+        </View>
+
+        {/* BƯỚC 2: Chọn danh mục Áo, Quần, Váy, Giày (Chạm 2) */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>2. Danh mục trang phục</Text>
+          <View style={styles.categoryRow}>
+            {CATEGORIES.map((cat) => {
+              const active = category === cat.id;
               return (
                 <Pressable
-                  key={m.id}
-                  style={[styles.methodBtn, active && styles.methodBtnActive]}
-                  onPress={() => setSelectedMethod(m.id)}
+                  key={cat.id}
+                  style={[styles.categoryBtn, active && styles.categoryBtnActive]}
+                  onPress={() => {
+                    setCategory(cat.id);
+                    // Cập nhật tên gợi ý khi đổi danh mục theo màu đang chọn
+                    setItemName(`${cat.id} ${activeColor.name.toLowerCase()}`);
+                  }}
                 >
                   <Ionicons
-                    name={m.icon as any}
-                    size={24}
-                    color={active ? colors.primary : colors.textMuted}
+                    name={cat.icon}
+                    size={20}
+                    color={active ? colors.onPrimary : colors.textMuted}
                   />
-                  <Text style={[styles.methodText, active && styles.methodTextActive]}>
-                    {m.label}
+                  <Text style={[styles.categoryBtnText, active && styles.categoryBtnTextActive]}>
+                    {cat.label}
                   </Text>
                 </Pressable>
               );
             })}
           </View>
-          <Text style={styles.methodHint}>Dùng được cả ảnh chụp màn hình sản phẩm.</Text>
         </View>
 
-        {/* Image Preview Box */}
-        <View style={styles.previewBox}>
-          {previewShirt && (
-            <Image source={previewShirt.image} style={styles.previewImage} resizeMode="cover" />
-          )}
-          <View style={styles.previewInfo}>
-            <Text style={styles.previewTitle}>Sơ mi trắng</Text>
-            <Text style={styles.previewSubtitle}>Ảnh từ thư viện</Text>
-            <Text style={styles.previewStatus}>Đã chọn 1 ảnh</Text>
-            <Pressable style={styles.changePhotoBtn}>
-              <Ionicons name="image-outline" size={14} color={colors.primary} />
-              <Text style={styles.changePhotoText}>Đổi ảnh</Text>
-            </Pressable>
+        {/* BƯỚC 3: Chọn Formality: 1, 3, 5 (Chạm 3A) */}
+        <View style={styles.section}>
+          <View style={styles.labelRow}>
+            <Text style={styles.sectionTitle}>3. Độ lịch sự (Formality)</Text>
+            <Text style={styles.highlightVal}>Mức {formality}</Text>
+          </View>
+          <View style={styles.formalityRow}>
+            {FORMALITY_LEVELS.map((lvl) => {
+              const active = formality === lvl.value;
+              return (
+                <Pressable
+                  key={lvl.value}
+                  style={[styles.formalityBtn, active && styles.formalityBtnActive]}
+                  onPress={() => setFormality(lvl.value)}
+                >
+                  <Text style={[styles.formalityTitle, active && styles.formalityTitleActive]}>
+                    {lvl.label}
+                  </Text>
+                  <Text style={[styles.formalityDesc, active && styles.formalityDescActive]}>
+                    {lvl.desc}
+                  </Text>
+                </Pressable>
+              );
+            })}
           </View>
         </View>
 
-        {/* Loại đồ */}
+        {/* BƯỚC 4: Bối cảnh (Contexts) & Màu sắc (Chạm 3B) */}
         <View style={styles.section}>
-          <Text style={styles.label}>Loại đồ</Text>
-          <Pressable
-            style={styles.dropdownBtn}
-            onPress={() => {
-              // Tùy chọn chuyển đổi nhanh giữa các loại đồ
-              const types = ['Áo · Sơ mi', 'Áo · Thun', 'Quần · Jeans', 'Quần · Kaki', 'Váy', 'Giày · Sneaker'];
-              const nextIndex = (types.indexOf(itemType) + 1) % types.length;
-              setItemType(types[nextIndex]);
-            }}
-          >
-            <Text style={styles.dropdownText}>{itemType}</Text>
-            <Ionicons name="chevron-down" size={18} color={colors.textMuted} />
-          </Pressable>
+          <Text style={styles.sectionTitle}>4. Phù hợp dịp nào? (Contexts)</Text>
+          <View style={styles.contextsRow}>
+            {CONTEXT_OPTIONS.map((ctx) => {
+              const active = selectedContexts.includes(ctx);
+              return (
+                <Pressable
+                  key={ctx}
+                  style={[styles.contextChip, active && styles.contextChipActive]}
+                  onPress={() => toggleContext(ctx)}
+                >
+                  <Ionicons
+                    name={active ? 'checkmark-circle' : 'add-circle-outline'}
+                    size={16}
+                    color={active ? colors.onPrimary : colors.textMuted}
+                  />
+                  <Text style={[styles.contextChipText, active && styles.contextChipTextActive]}>
+                    {ctx}
+                  </Text>
+                </Pressable>
+              );
+            })}
+          </View>
         </View>
 
-        {/* Màu sắc */}
+        {/* Chọn / đổi màu sắc */}
         <View style={styles.section}>
           <View style={styles.labelRow}>
             <Text style={styles.label}>Màu sắc</Text>
-            <Text style={styles.selectedColorLabel}>
-              {COLOR_PALETTE.find((c) => c.id === selectedColor)?.name}
+            <Text style={styles.highlightVal}>
+              {COLOR_PALETTE.find((c) => c.id === selectedColorId)?.name}
             </Text>
           </View>
-          <View style={styles.colorPaletteRow}>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.paletteScroll}
+          >
             {COLOR_PALETTE.map((c) => {
-              const active = selectedColor === c.id;
+              const active = selectedColorId === c.id;
               return (
                 <Pressable
                   key={c.id}
@@ -147,59 +501,51 @@ export default function AddItemScreen() {
                     c.border ? { borderWidth: 1, borderColor: c.border } : null,
                     active && styles.colorDotActive,
                   ]}
-                  onPress={() => setSelectedColor(c.id)}
+                  onPress={() => {
+                    setSelectedColorId(c.id);
+                    setItemName(`${category} ${c.name.toLowerCase()}`);
+                  }}
                 >
                   {active && (
                     <Ionicons
                       name="checkmark"
-                      size={16}
+                      size={15}
                       color={c.id === 'white' || c.id === 'cream' ? colors.primary : '#FFFFFF'}
                     />
                   )}
                 </Pressable>
               );
             })}
-          </View>
+          </ScrollView>
         </View>
 
-        {/* Phù hợp dịp nào? */}
-        <View style={styles.section}>
-          <Text style={styles.label}>Phù hợp dịp nào?</Text>
-          <View style={styles.occasionsRow}>
-            {OCCASIONS.map((occ) => {
-              const active = selectedOccasions.includes(occ);
-              return (
-                <Pressable
-                  key={occ}
-                  style={[styles.occasionChip, active && styles.occasionChipActive]}
-                  onPress={() => toggleOccasion(occ)}
-                >
-                  <Text style={[styles.occasionText, active && styles.occasionTextActive]}>
-                    {occ}
-                  </Text>
-                </Pressable>
-              );
-            })}
-          </View>
-        </View>
-
-        {/* Alert box */}
+        {/* Cam kết lưu an toàn */}
         <View style={styles.infoAlert}>
-          <Ionicons name="information-circle-outline" size={18} color={colors.primary} />
+          <Ionicons name="save-outline" size={18} color={colors.primary} />
           <Text style={styles.infoAlertText}>
-            Dùng mẫu cơ bản? Chỉ thêm món bạn thật sự sở hữu và xác nhận lại màu sắc.
+            Dữ liệu trang phục được lưu trữ vĩnh viễn trong SQLite nội bộ thiết bị của bạn.
           </Text>
         </View>
       </ScrollView>
 
-      {/* Bottom Save Action */}
+      {/* CHẠM 4: Nút "Lưu vào tủ đồ" */}
       <View style={styles.bottomBar}>
-        <Pressable style={styles.saveBtn} onPress={handleSave}>
-          <Text style={styles.saveBtnText}>Lưu vào tủ đồ</Text>
-          <Ionicons name="checkmark" size={18} color={colors.onPrimary} />
+        <Pressable
+          style={[styles.saveBtn, (isSaving || isProcessingImage) && styles.saveBtnDisabled]}
+          onPress={handleSaveToWardrobe}
+          disabled={isSaving || isProcessingImage}
+        >
+          {isSaving ? (
+            <ActivityIndicator size="small" color={colors.onPrimary} />
+          ) : (
+            <>
+              <Text style={styles.saveBtnText}>Lưu vào tủ đồ</Text>
+              <Ionicons name="checkmark-sharp" size={20} color={colors.onPrimary} />
+            </>
+          )}
         </Pressable>
-        <Text style={styles.bottomDisclaimer}>
-          Ảnh và thông tin chỉ được lưu trên thiết bị.
+        <Text style={styles.bottomNote}>
+          Hoàn tất thêm trang phục trong 4 chạm nhanh chóng.
         </Text>
       </View>
     </SafeAreaView>
@@ -225,87 +571,174 @@ const styles = StyleSheet.create({
   container: { flex: 1 },
   content: { padding: spacing.md, gap: spacing.md, paddingBottom: spacing.xxl },
 
-  section: { gap: spacing.xs },
-  sectionTitle: { fontSize: 14, fontWeight: '700', color: colors.text },
+  section: { gap: spacing.xs + 2 },
+  sectionTitle: { fontSize: 13, fontWeight: '700', color: colors.text },
+  labelRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  label: { fontSize: 13, fontWeight: '600', color: colors.text },
+  highlightVal: { fontSize: 12, fontWeight: '700', color: colors.primary },
+
+  // Method buttons (Chạm 1)
   methodRow: { flexDirection: 'row', gap: spacing.sm },
   methodBtn: {
     flex: 1,
     backgroundColor: colors.surfaceSubtle,
     borderRadius: radius.md,
-    paddingVertical: 14,
+    paddingVertical: 12,
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 1.5,
-    borderColor: 'transparent',
+    borderColor: colors.border,
     gap: 4,
   },
-  methodBtnActive: {
-    backgroundColor: '#F0F9FB',
-    borderColor: colors.primary,
-  },
-  methodText: { fontSize: 11, fontWeight: '600', color: colors.textMuted },
-  methodTextActive: { color: colors.primary, fontWeight: '700' },
-  methodHint: { fontSize: 11, color: colors.textLight, marginTop: 2 },
+  methodBtnText: { fontSize: 12, fontWeight: '700', color: colors.text },
 
   // Preview Box
-  previewBox: {
+  previewCard: {
     flexDirection: 'row',
     backgroundColor: colors.surfaceCard,
     borderRadius: radius.lg,
     borderWidth: 1.5,
-    borderStyle: 'dashed',
     borderColor: '#93C5FD',
+    borderStyle: 'dashed',
     padding: spacing.md,
     gap: spacing.md,
     alignItems: 'center',
   },
-  previewImage: {
-    width: 90,
-    height: 90,
-    borderRadius: radius.md,
-    backgroundColor: '#EAE6E1',
+  previewCardTransparent: {
+    borderColor: colors.primary,
+    backgroundColor: '#F8FCFD',
   },
-  previewInfo: { flex: 1, gap: 2 },
-  previewTitle: { fontSize: 16, fontWeight: '700', color: colors.text },
-  previewSubtitle: { fontSize: 12, color: colors.textMuted },
-  previewStatus: { fontSize: 11, color: colors.textLight },
-  changePhotoBtn: {
+  imageBox: {
+    width: 96,
+    height: 96,
+    borderRadius: radius.md,
+    backgroundColor: '#F1F5F9',
+    alignItems: 'center',
+    justifyContent: 'center',
+    overflow: 'hidden',
+    position: 'relative',
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  loadingBox: { alignItems: 'center', justifyContent: 'center' },
+  loadingText: { fontSize: 9, color: colors.primary, fontWeight: '700', marginTop: 4 },
+  previewImg: { width: 90, height: 90 },
+  aiBadge: {
+    position: 'absolute',
+    bottom: 3,
+    left: 3,
+    right: 3,
+    backgroundColor: 'rgba(15, 118, 110, 0.88)',
+    borderRadius: 4,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 3,
+    paddingVertical: 2,
+  },
+  aiBadgeText: { color: '#FFFFFF', fontSize: 9, fontWeight: '700' },
+  previewInfo: { flex: 1, gap: 4 },
+  nameInput: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: colors.text,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+    paddingVertical: 2,
+  },
+  previewSub: { fontSize: 12, color: colors.textMuted },
+  detectedColorBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginTop: 2,
+  },
+  detectedColorDot: {
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+  },
+  detectedColorText: { fontSize: 11, fontWeight: '600', color: colors.primary },
+  changeActionBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
-    marginTop: spacing.xs,
+    marginTop: 4,
   },
-  changePhotoText: { fontSize: 12, fontWeight: '700', color: colors.primary },
+  changeActionText: { fontSize: 12, fontWeight: '700', color: colors.primary },
 
-  // Form Fields
-  labelRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  label: { fontSize: 13, fontWeight: '700', color: colors.text },
-  selectedColorLabel: { fontSize: 13, fontWeight: '600', color: colors.textMuted },
-
-  dropdownBtn: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: colors.border,
+  // Categories (Chạm 2)
+  categoryRow: { flexDirection: 'row', gap: spacing.xs + 2 },
+  categoryBtn: {
+    flex: 1,
+    backgroundColor: colors.surfaceSubtle,
     borderRadius: radius.md,
-    paddingHorizontal: spacing.md,
-    paddingVertical: 12,
-    backgroundColor: colors.bg,
-  },
-  dropdownText: { fontSize: 14, color: colors.text, fontWeight: '500' },
-
-  // Color Palette
-  colorPaletteRow: { flexDirection: 'row', gap: spacing.md, paddingVertical: spacing.xs },
-  colorDot: {
-    width: 38,
-    height: 38,
-    borderRadius: 19,
+    paddingVertical: 10,
     alignItems: 'center',
     justifyContent: 'center',
-    shadowColor: '#000',
-    shadowOpacity: 0.05,
-    shadowRadius: 3,
+    borderWidth: 1.5,
+    borderColor: colors.border,
+    gap: 4,
+  },
+  categoryBtnActive: {
+    backgroundColor: colors.primary,
+    borderColor: colors.primary,
+  },
+  categoryBtnText: { fontSize: 12, fontWeight: '600', color: colors.textMuted },
+  categoryBtnTextActive: { color: colors.onPrimary, fontWeight: '700' },
+
+  // Formality: 1, 3, 5 (Chạm 3A)
+  formalityRow: { flexDirection: 'row', gap: spacing.xs },
+  formalityBtn: {
+    flex: 1,
+    backgroundColor: colors.surfaceSubtle,
+    borderRadius: radius.md,
+    paddingVertical: 10,
+    paddingHorizontal: 6,
+    alignItems: 'center',
+    borderWidth: 1.5,
+    borderColor: colors.border,
+    gap: 2,
+  },
+  formalityBtnActive: {
+    backgroundColor: '#F0F9FB',
+    borderColor: colors.primary,
+  },
+  formalityTitle: { fontSize: 11, fontWeight: '700', color: colors.textMuted },
+  formalityTitleActive: { color: colors.primary },
+  formalityDesc: { fontSize: 9, color: colors.textLight, textAlign: 'center' },
+  formalityDescActive: { color: colors.primaryDark },
+
+  // Contexts: Đi học, Đi làm, Đi chơi, Hẹn hò (Chạm 3B)
+  contextsRow: { flexDirection: 'row', gap: spacing.xs, flexWrap: 'wrap' },
+  contextChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: radius.full,
+    backgroundColor: colors.surfaceSubtle,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  contextChipActive: {
+    backgroundColor: colors.primary,
+    borderColor: colors.primary,
+  },
+  contextChipText: { fontSize: 12, fontWeight: '600', color: colors.chipInactiveText },
+  contextChipTextActive: { color: colors.chipActiveText },
+
+  // Color Palette
+  paletteScroll: { flexDirection: 'row', gap: spacing.sm, paddingVertical: spacing.xs },
+  colorDot: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    alignItems: 'center',
+    justifyContent: 'center',
     elevation: 1,
   },
   colorDotActive: {
@@ -313,35 +746,20 @@ const styles = StyleSheet.create({
     borderColor: colors.primary,
   },
 
-  // Occasions
-  occasionsRow: { flexDirection: 'row', gap: spacing.xs, flexWrap: 'wrap' },
-  occasionChip: {
-    paddingHorizontal: 16,
-    paddingVertical: 9,
-    borderRadius: radius.full,
-    backgroundColor: colors.surfaceSubtle,
-  },
-  occasionChipActive: {
-    backgroundColor: colors.primary,
-  },
-  occasionText: { fontSize: 12, fontWeight: '600', color: colors.chipInactiveText },
-  occasionTextActive: { color: colors.chipActiveText },
-
   // Alert
   infoAlert: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.sm,
-    backgroundColor: '#F0F9FB',
+    backgroundColor: '#F0FDF4',
     borderRadius: radius.md,
-    borderWidth: 1.5,
-    borderStyle: 'dashed',
-    borderColor: '#93C5FD',
+    borderWidth: 1,
+    borderColor: '#BBF7D0',
     padding: spacing.sm + 2,
   },
-  infoAlertText: { flex: 1, fontSize: 11, color: colors.textMuted, lineHeight: 16 },
+  infoAlertText: { flex: 1, fontSize: 11, color: '#166534', lineHeight: 16 },
 
-  // Bottom Action Bar
+  // Bottom Save Action (Chạm 4)
   bottomBar: {
     padding: spacing.md,
     paddingTop: spacing.xs,
@@ -354,12 +772,12 @@ const styles = StyleSheet.create({
     backgroundColor: colors.primary,
     borderRadius: radius.md,
     paddingVertical: 14,
-    flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
+    flexDirection: 'row',
     gap: spacing.xs,
   },
+  saveBtnDisabled: { opacity: 0.6 },
   saveBtnText: { color: colors.onPrimary, fontSize: 15, fontWeight: '700' },
-  bottomDisclaimer: { fontSize: 11, color: colors.textLight, textAlign: 'center' },
+  bottomNote: { fontSize: 10, color: colors.textLight, textAlign: 'center' },
 });
-

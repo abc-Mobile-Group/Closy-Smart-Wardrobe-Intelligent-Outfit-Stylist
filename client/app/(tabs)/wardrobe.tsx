@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   Alert,
   FlatList,
@@ -14,22 +14,58 @@ import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors, radius, spacing } from '../../src/constants/theme';
-import { SEED_ITEMS, SeedItem } from '../../src/constants/seedData';
+import ItemDetailModal from '../../src/components/ItemDetailModal';
 import { useAuthStore } from '../../src/store/authStore';
+import { useWardrobeStore } from '../../src/store/wardrobeStore';
+import { WardrobeItem } from '../../src/types/item';
 
 const CATEGORIES = ['Tất cả', 'Áo', 'Quần', 'Váy', 'Giày'] as const;
+
+// Hàm hỗ trợ chèn các ô trống vô hình để hàng cuối của lưới 3 cột không bị tách lệch hai bên
+const formatGridData = (dataList: any[], numCols: number = 3) => {
+  const total = dataList.length;
+  const remainder = total % numCols;
+  if (remainder === 0) return dataList;
+  const blanksNeeded = numCols - remainder;
+  const padded = [...dataList];
+  for (let i = 0; i < blanksNeeded; i++) {
+    padded.push({ id: `__blank_${i}__`, isBlank: true });
+  }
+  return padded;
+};
 
 export default function WardrobeScreen() {
   const router = useRouter();
   const { email, name, openProfile } = useAuthStore();
+  const { items: dbItems, loadItems, deleteItem, updateItem } = useWardrobeStore();
   const [selectedCategory, setSelectedCategory] = useState<string>('Tất cả');
   const [searchQuery, setSearchQuery] = useState('');
+  const [activeItem, setActiveItem] = useState<WardrobeItem | null>(null);
+
+  // Tải danh sách đồ từ SQLite khi màn hình hiển thị
+  useEffect(() => {
+    loadItems();
+  }, []);
 
   const displayName = name || (email ? email.split('@')[0] : 'An');
   const initial = displayName.charAt(0).toUpperCase();
 
+  // Chỉ lấy các món đồ thật người dùng đã lưu trong SQLite
+  const combinedItems = useMemo(() => {
+    return dbItems.map((item) => ({
+      id: `db_${item.id}`,
+      rawDbId: item.id,
+      name: item.name || `${item.category} ${item.color_name || ''}`.trim(),
+      category: item.category,
+      colorName: item.color_name || 'Tự chọn',
+      context: item.contexts || 'Mọi dịp',
+      image: { uri: item.image_path },
+      isDbItem: true,
+    }));
+  }, [dbItems]);
+
   const filteredItems = useMemo(() => {
-    return SEED_ITEMS.filter((item) => {
+    return combinedItems.filter((item) => {
       const matchCategory =
         selectedCategory === 'Tất cả' || item.category === selectedCategory;
       const matchSearch =
@@ -40,7 +76,7 @@ export default function WardrobeScreen() {
         item.context.toLowerCase().includes(searchQuery.toLowerCase());
       return matchCategory && matchSearch;
     });
-  }, [selectedCategory, searchQuery]);
+  }, [combinedItems, selectedCategory, searchQuery]);
 
   return (
     <SafeAreaView style={styles.safeArea} edges={['top']}>
@@ -50,7 +86,7 @@ export default function WardrobeScreen() {
           <View style={styles.headerLeft}>
             <Text style={styles.headerTitle}>Tủ đồ của bạn</Text>
             <Text style={styles.headerSubtitle}>
-              {SEED_ITEMS.length} món quen thuộc, nhiều cách phối mới
+              {combinedItems.length} món quen thuộc, nhiều cách phối mới
             </Text>
           </View>
           <Pressable style={styles.avatar} onPress={openProfile}>
@@ -107,13 +143,17 @@ export default function WardrobeScreen() {
 
         {/* 3-Column Grid */}
         <FlatList
-          data={[...filteredItems, { id: '__add_new__', isAddBtn: true } as any]}
+          data={formatGridData([...filteredItems, { id: '__add_new__', isAddBtn: true } as any])}
           keyExtractor={(item) => item.id}
           numColumns={3}
           showsVerticalScrollIndicator={false}
           contentContainerStyle={styles.gridContent}
           columnWrapperStyle={styles.gridRow}
           renderItem={({ item }) => {
+            if (item.isBlank) {
+              return <View style={styles.blankCard} />;
+            }
+
             if (item.isAddBtn) {
               return (
                 <Pressable
@@ -126,18 +166,36 @@ export default function WardrobeScreen() {
               );
             }
 
-            const seed = item as SeedItem;
             return (
               <Pressable
                 style={styles.itemCard}
-                onPress={() => router.push('/add-item')}
+                onPress={() => {
+                  const raw = dbItems.find((d) => d.id === item.rawDbId);
+                  if (raw) setActiveItem(raw);
+                }}
+                onLongPress={() => {
+                  if (item.rawDbId) {
+                    Alert.alert(
+                      'Xóa món đồ',
+                      `Bạn có chắc muốn xóa "${item.name}" khỏi tủ đồ?`,
+                      [
+                        { text: 'Hủy', style: 'cancel' },
+                        {
+                          text: 'Xóa',
+                          style: 'destructive',
+                          onPress: () => deleteItem(item.rawDbId),
+                        },
+                      ]
+                    );
+                  }
+                }}
               >
-                <Image source={seed.image} style={styles.itemImage} resizeMode="cover" />
+                <Image source={item.image} style={styles.itemImage} resizeMode="cover" />
                 <Text style={styles.itemName} numberOfLines={1}>
-                  {seed.name}
+                  {item.name}
                 </Text>
                 <Text style={styles.itemMeta} numberOfLines={1}>
-                  {seed.colorName} · {seed.context}
+                  {item.colorName} · {item.context}
                 </Text>
               </Pressable>
             );
@@ -150,6 +208,21 @@ export default function WardrobeScreen() {
               </Text>
             </View>
           }
+        />
+
+        {/* Modal xem chi tiết, chỉnh sửa & xóa món đồ */}
+        <ItemDetailModal
+          visible={Boolean(activeItem)}
+          item={activeItem}
+          onClose={() => setActiveItem(null)}
+          onDelete={async (id) => {
+            await deleteItem(id);
+            setActiveItem(null);
+          }}
+          onUpdate={async (id, data) => {
+            const updated = await updateItem(id, data as any);
+            if (updated) setActiveItem(updated);
+          }}
         />
       </View>
     </SafeAreaView>
@@ -273,6 +346,9 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: colors.primary,
     textAlign: 'center',
+  },
+  blankCard: {
+    width: '31%',
   },
 
   // Footer

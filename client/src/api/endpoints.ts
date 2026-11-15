@@ -40,3 +40,59 @@ export const authApi = {
     ),
   health: () => apiFetch<{ ok: boolean }>('/health', {}, { auth: false, timeoutMs: 5000 }),
 };
+
+export type ProcessedColor = {
+  hex: string;
+  h: number;
+  s: number;
+  l: number;
+  name: string;
+  closest_palette_id: string;
+};
+
+export type ColorPaletteItem = {
+  hex: string;
+  h: number;
+  s: number;
+  l: number;
+  name: string;
+  percentage: number;
+  closest_preset: {
+    id: string;
+    name: string;
+    hex: string;
+  };
+};
+
+export type ProcessImageResponse = {
+  success: boolean;
+  image_base64?: string;
+  format?: string;
+  width?: number;
+  height?: number;
+  color?: ProcessedColor;
+  palette?: ColorPaletteItem[];
+  process_time_sec?: number;
+  category?: 'Áo' | 'Quần' | 'Váy' | 'Giày';
+  name?: string;
+  formality?: 1 | 3 | 5;
+  contexts?: string[];
+  is_clothing?: boolean;
+  rejection_reason?: string;
+  message?: string;
+};
+
+export const imageApi = {
+  processBase64: (imageBase64: string, timeoutMs = 35000) =>
+    apiFetch<ProcessImageResponse>('/image/process', {
+      method: 'POST',
+      body: JSON.stringify({ image_base64: imageBase64 }),
+    }, { auth: true, timeoutMs }),
+
+  process: (formData: FormData, timeoutMs = 35000) =>
+    apiFetch<ProcessImageResponse>('/image/process', {
+      method: 'POST',
+      body: formData,
+    }, { auth: true, timeoutMs }),
+};
+

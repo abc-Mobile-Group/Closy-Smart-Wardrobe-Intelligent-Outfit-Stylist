@@ -16,6 +16,8 @@ venv/
 *.db
 *.sqlite3
 *.log
+.models/
+server/.models/
 android/
 ios/
 .DS_Store

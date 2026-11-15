@@ -2,6 +2,7 @@ import React from 'react';
 import { Platform, StyleSheet, View } from 'react-native';
 import { Tabs } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { colors } from '../../src/constants/theme';
 
 const renderIcon =
@@ -15,6 +16,17 @@ const renderIcon =
     };
 
 export default function TabsLayout() {
+  const insets = useSafeAreaInsets();
+  const bottomInset = insets.bottom;
+  const tabHeight = Platform.select({
+    web: 76,
+    default: 60 + bottomInset,
+  });
+  const paddingBottom = Platform.select({
+    web: 8,
+    default: Math.max(bottomInset, 8),
+  });
+
   return (
     <Tabs
       screenOptions={{
@@ -24,8 +36,8 @@ export default function TabsLayout() {
           backgroundColor: colors.bg,
           borderTopColor: colors.border,
           borderTopWidth: 1,
-          height: 76,
-          paddingBottom: 8,
+          height: tabHeight,
+          paddingBottom: paddingBottom,
           paddingTop: 6,
           ...Platform.select({
             web: {

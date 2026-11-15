@@ -1,19 +1,43 @@
-import { Platform } from 'react-native';
-import {
-  GoogleSignin,
-  isErrorWithCode,
-  statusCodes,
-} from '@react-native-google-signin/google-signin';
+import { NativeModules, Platform } from 'react-native';
 import { authApi } from '../api/endpoints';
 import { Session, sessionStore } from '../api/session';
 
 export class SignInCancelled extends Error {}
 
+// Kiểm tra an toàn xem binary có RNGoogleSignin hay không để không gây Invariant Violation trên Expo Go
+const isNativeGoogleSigninAvailable = (): boolean => {
+  if (Platform.OS === 'web') return false;
+  try {
+    const TurboRegistry = require('react-native').TurboModuleRegistry;
+    return Boolean(
+      NativeModules.RNGoogleSignin ||
+      TurboRegistry?.get?.('RNGoogleSignin')
+    );
+  } catch {
+    return false;
+  }
+};
+
+let GoogleSigninModule: any = null;
+if (isNativeGoogleSigninAvailable()) {
+  try {
+    GoogleSigninModule = require('@react-native-google-signin/google-signin');
+  } catch {
+    GoogleSigninModule = null;
+  }
+}
+
 let configured = false;
 function configure() {
   if (configured) return;
-  if (Platform.OS !== 'web') {
-    GoogleSignin.configure({ webClientId: process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID });
+  if (Platform.OS !== 'web' && GoogleSigninModule?.GoogleSignin) {
+    try {
+      GoogleSigninModule.GoogleSignin.configure({
+        webClientId: process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID,
+      });
+    } catch (e) {
+      console.warn('Lỗi cấu hình GoogleSignin:', e);
+    }
   }
   configured = true;
 }
@@ -22,6 +46,14 @@ export async function signInWithGoogle(): Promise<Session> {
   if (Platform.OS === 'web') {
     throw new Error('Đăng nhập Google chỉ hỗ trợ trên ứng dụng điện thoại. Vui lòng đăng nhập hoặc đăng ký bằng Email trên bản Web.');
   }
+
+  if (!GoogleSigninModule?.GoogleSignin) {
+    throw new Error(
+      'Tính năng Đăng nhập Google cần bản cài đặt APK (Development Build) vì Expo Go không hỗ trợ native module này. Vui lòng sử dụng Đăng nhập / Đăng ký bằng Email để test trên Expo Go!',
+    );
+  }
+
+  const { GoogleSignin, isErrorWithCode, statusCodes } = GoogleSigninModule;
   configure();
   try {
     await GoogleSignin.hasPlayServices();
@@ -40,9 +72,9 @@ export async function signInWithGoogle(): Promise<Session> {
     };
     await sessionStore.set(session);
     return session;
-  } catch (e) {
+  } catch (e: any) {
     if (e instanceof SignInCancelled) throw e;
-    if (isErrorWithCode(e) && e.code === statusCodes.SIGN_IN_CANCELLED) throw new SignInCancelled();
+    if (isErrorWithCode?.(e) && e.code === statusCodes?.SIGN_IN_CANCELLED) throw new SignInCancelled();
     throw e;
   }
 }
@@ -84,8 +116,10 @@ export async function loadSession(): Promise<Session | null> {
 
 export async function signOut(): Promise<void> {
   try {
-    configure();
-    await GoogleSignin.signOut();
+    if (GoogleSigninModule?.GoogleSignin) {
+      configure();
+      await GoogleSigninModule.GoogleSignin.signOut();
+    }
   } catch {
     // bỏ qua: vẫn phải xóa phiên cục bộ
   }

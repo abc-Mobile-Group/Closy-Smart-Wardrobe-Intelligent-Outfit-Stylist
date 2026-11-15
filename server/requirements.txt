@@ -4,3 +4,9 @@ python-dotenv
 google-auth
 requests
 pyjwt
+python-multipart
+pillow
+numpy
+scikit-learn
+rembg
+onnxruntime

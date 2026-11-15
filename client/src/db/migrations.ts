@@ -5,7 +5,7 @@ const MIGRATIONS: string[] = [
   // v1
   `CREATE TABLE items (
      id          INTEGER PRIMARY KEY AUTOINCREMENT,
-     category    TEXT    NOT NULL,              -- 'top' | 'bottom' (kiểm tra ở code, dễ mở rộng)
+     category    TEXT    NOT NULL,              -- 'Áo' | 'Quần' | 'Váy' | 'Giày'
      image_path  TEXT    NOT NULL,              -- đường dẫn tương đối trong thư mục app
      color_h     INTEGER NOT NULL,              -- 0-360
      color_s     INTEGER NOT NULL,              -- 0-100
@@ -17,6 +17,11 @@ const MIGRATIONS: string[] = [
      created_at  TEXT    NOT NULL DEFAULT (datetime('now'))
    );
    CREATE INDEX idx_items_category ON items(category);`,
+
+  // v2: Bổ sung tên món đồ, mã màu HEX và tên hiển thị màu
+  `ALTER TABLE items ADD COLUMN name TEXT;
+   ALTER TABLE items ADD COLUMN color_name TEXT;
+   ALTER TABLE items ADD COLUMN color_hex TEXT;`,
 ];
 
 export async function migrate(db: SQLiteDatabase): Promise<void> {
