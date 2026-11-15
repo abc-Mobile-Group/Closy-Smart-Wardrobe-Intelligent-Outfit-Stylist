@@ -156,10 +156,19 @@ export default function OutfitDetailScreen() {
     const targetItem = currentItems.find((i) => i.id === itemId);
     if (!targetItem) return;
 
+    const isTargetDress = targetItem.category === 'Đầm' || targetItem.name.toLowerCase().includes('đầm');
     const candidates = dbItems.filter(
-      (d) =>
-        d.category === targetItem.category &&
-        !currentItems.some((c) => String(c.id) === String(d.id)),
+      (d) => {
+        const isDDress = d.category === 'Đầm' || d.name.toLowerCase().includes('đầm');
+        if (isTargetDress) {
+          return isDDress && !currentItems.some((c) => String(c.id) === String(d.id));
+        }
+        return (
+          d.category === targetItem.category &&
+          !isDDress &&
+          !currentItems.some((c) => String(c.id) === String(d.id))
+        );
+      },
     );
 
     if (candidates.length === 0) {
@@ -194,11 +203,20 @@ export default function OutfitDetailScreen() {
     setCurrentItems((prev) =>
       prev.map((it) => {
         if (lockedItemIds.includes(it.id)) return it;
+        const isItDress = it.category === 'Đầm' || it.name.toLowerCase().includes('đầm');
         const candidates = dbItems.filter(
-          (d) =>
-            d.category === it.category &&
-            String(d.id) !== it.id &&
-            !lockedItemIds.includes(String(d.id)),
+          (d) => {
+            const isDDress = d.category === 'Đầm' || d.name.toLowerCase().includes('đầm');
+            if (isItDress) {
+              return isDDress && String(d.id) !== it.id && !lockedItemIds.includes(String(d.id));
+            }
+            return (
+              d.category === it.category &&
+              !isDDress &&
+              String(d.id) !== it.id &&
+              !lockedItemIds.includes(String(d.id))
+            );
+          },
         );
         if (candidates.length > 0) {
           changed = true;

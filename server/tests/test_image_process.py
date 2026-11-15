@@ -1,62 +1,76 @@
 import base64
 import io
 import os
+import tempfile
 import time
-import jwt
-import requests
 from PIL import Image
+import jwt
+import pytest
+from fastapi.testclient import TestClient
 
-BASE_URL = os.environ.get("TEST_API_URL", "http://127.0.0.1:8000")
-JWT_SECRET = os.environ.get("JWT_SECRET", "AH_WFNHG6pBbMh2kyb7Bqeb1fSepiXmjV0l1JjaRGb9mAWGG99jmtFwOCeEHbVUZ")
+os.environ["JWT_SECRET"] = os.environ.get("JWT_SECRET", "test-secret-key-closy-backend-image")
+os.environ["DB_PATH"] = os.environ.get("DB_PATH", os.path.join(tempfile.mkdtemp(), "test.db"))
+
+import main  # noqa: E402
+
+client = TestClient(main.app)
 
 
 def get_auth_token():
     payload = {"uid": 1, "exp": int(time.time()) + 3600}
-    return jwt.encode(payload, JWT_SECRET, algorithm="HS256")
+    return jwt.encode(payload, main.JWT_SECRET, algorithm="HS256")
 
 
 def test_process_image_requires_auth():
-    print("1. Running test_process_image_requires_auth()...")
-    res = requests.post(f"{BASE_URL}/image/process", json={"image_base64": "test"})
-    assert res.status_code == 401, f"Expected 401, got {res.status_code}"
-    print("   -> PASS!")
+    res = client.post("/image/process", json={"image_base64": "test"})
+    assert res.status_code == 401
 
 
 def test_process_image_invalid_auth():
-    print("2. Running test_process_image_invalid_auth()...")
     headers = {"Authorization": "Bearer invalid_token_123"}
-    res = requests.post(f"{BASE_URL}/image/process", headers=headers, json={"image_base64": "test"})
-    assert res.status_code == 401, f"Expected 401, got {res.status_code}"
-    print("   -> PASS!")
+    res = client.post("/image/process", headers=headers, json={"image_base64": "test"})
+    assert res.status_code == 401
 
 
 def test_process_image_rejects_empty_file():
-    print("3. Running test_process_image_rejects_empty_file()...")
     token = get_auth_token()
     headers = {"Authorization": f"Bearer {token}"}
     files = {"file": ("empty.png", b"", "image/png")}
-    res = requests.post(f"{BASE_URL}/image/process", headers=headers, files=files)
-    assert res.status_code == 400, f"Expected 400, got {res.status_code}"
-    print("   -> PASS!")
+    res = client.post("/image/process", headers=headers, files=files)
+    assert res.status_code == 400
 
 
 def test_process_image_rejects_oversized_file():
-    print("4. Running test_process_image_rejects_oversized_file()...")
     token = get_auth_token()
     headers = {"Authorization": f"Bearer {token}"}
     large_payload = b"0" * (20 * 1024 * 1024 + 10)
     files = {"file": ("large.png", large_payload, "image/png")}
-    res = requests.post(f"{BASE_URL}/image/process", headers=headers, files=files)
-    assert res.status_code == 400, f"Expected 400, got {res.status_code}"
-    print("   -> PASS!")
+    res = client.post("/image/process", headers=headers, files=files)
+    assert res.status_code == 400
 
 
-def test_process_image_rejects_non_clothing():
-    print("5. Running test_process_image_rejects_non_clothing()...")
+def test_process_image_rejects_non_image():
+    token = get_auth_token()
+    headers = {"Authorization": f"Bearer {token}"}
+    files = {"file": ("test.txt", b"Hello world non image", "text/plain")}
+    res = client.post("/image/process", headers=headers, files=files)
+    assert res.status_code == 400
+
+
+def test_process_image_rejects_non_clothing(monkeypatch):
     token = get_auth_token()
     headers = {"Authorization": f"Bearer {token}"}
 
-    # Tạo ảnh hình khối đồ họa đơn thuần (không phải quần áo)
+    # Mock Ollama trả về vật thể không phải trang phục
+    monkeypatch.setattr(
+        main,
+        "classify_clothing_with_ollama",
+        lambda *_a, **_k: {
+            "is_clothing": False,
+            "rejection_reason": "Vui lòng chọn hoặc chụp ảnh trang phục để mặc (Áo, Quần, Váy, Giày)!",
+        },
+    )
+
     img = Image.new("RGB", (300, 300), color=(255, 255, 255))
     for x in range(100, 200):
         for y in range(100, 200):
@@ -65,39 +79,53 @@ def test_process_image_rejects_non_clothing():
     img.save(buf, format="PNG")
     b64_data = base64.b64encode(buf.getvalue()).decode("utf-8")
 
-    res = requests.post(
-        f"{BASE_URL}/image/process",
+    res = client.post(
+        "/image/process",
         headers=headers,
         json={"image_base64": b64_data},
     )
-    assert res.status_code == 200, f"Expected 200, got {res.status_code}"
+    assert res.status_code == 200
     data = res.json()
-    assert data["is_clothing"] is False, f"Expected is_clothing False, got {data}"
+    assert data["is_clothing"] is False
     assert "rejection_reason" in data or "message" in data
-    print(f"   -> PASS! Thẩm định thành công từ chối vật phẩm không phải quần áo: '{data.get('message')}'")
 
 
-def test_process_image_success_end_to_end():
-    print("6. Running test_process_image_success_end_to_end()...")
+def test_process_image_success_end_to_end(monkeypatch):
     token = get_auth_token()
     headers = {"Authorization": f"Bearer {token}"}
 
-    # Đọc ảnh trang phục thật
-    clothing_path = "/app/test_shirt.jpg"
-    if not os.path.exists(clothing_path):
-        clothing_path = "test_shirt.jpg"
-    with open(clothing_path, "rb") as f:
-        b64_data = base64.b64encode(f.read()).decode("utf-8")
+    # Mock Ollama để deterministic chạy độc lập trong CI
+    monkeypatch.setattr(
+        main,
+        "classify_clothing_with_ollama",
+        lambda *_a, **_k: {
+            "is_clothing": True,
+            "category": "Áo",
+            "name": "Áo thun xanh navy",
+            "color_name": "Xanh đậm",
+            "formality": 1,
+            "contexts": ["Đi học", "Đi chơi"],
+        },
+    )
+
+    # Tạo ảnh áo màu xanh navy (RGB: 36, 58, 99) trên nền trắng
+    img = Image.new("RGB", (300, 300), color=(255, 255, 255))
+    for x in range(75, 225):
+        for y in range(75, 225):
+            img.putpixel((x, y), (36, 58, 99))
+    buf = io.BytesIO()
+    img.save(buf, format="PNG")
+    b64_data = base64.b64encode(buf.getvalue()).decode("utf-8")
 
     t0 = time.time()
-    res = requests.post(
-        f"{BASE_URL}/image/process",
+    res = client.post(
+        "/image/process",
         headers=headers,
         json={"image_base64": b64_data},
     )
     elapsed = time.time() - t0
 
-    assert res.status_code == 200, f"Expected 200, got {res.status_code}: {res.text}"
+    assert res.status_code == 200
     data = res.json()
     assert data["success"] is True
     assert data["is_clothing"] is True
@@ -116,16 +144,3 @@ def test_process_image_success_end_to_end():
     assert "hex" in color and color["hex"].startswith("#")
     assert "name" in color
     assert "closest_palette_id" in color
-
-    print(f"   -> PASS! (Thời gian: {round(elapsed, 2)}s, Loại: {data['category']}, Màu: {color['name']})")
-
-
-if __name__ == "__main__":
-    print("=== CHẠY TOÀN BỘ KIỂM THỬ XỬ LÝ ẢNH (POST /image/process) ===\n")
-    test_process_image_requires_auth()
-    test_process_image_invalid_auth()
-    test_process_image_rejects_empty_file()
-    test_process_image_rejects_oversized_file()
-    test_process_image_rejects_non_clothing()
-    test_process_image_success_end_to_end()
-    print("\n✓ TOÀN BỘ 6/6 TEST XỬ LÝ ẢNH VÀ THẨM ĐỊNH AI ĐỀU ĐẠT 100%!")
