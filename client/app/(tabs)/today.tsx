@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Alert,
   Image,
@@ -9,12 +9,15 @@ import {
   Text,
   View,
 } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useFocusEffect, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors, radius, spacing } from '../../src/constants/theme';
 import { SEED_ITEMS } from '../../src/constants/seedData';
 import { useAuthStore } from '../../src/store/authStore';
+import { useWardrobeStore } from '../../src/store/wardrobeStore';
+import { WeatherData, WeatherService } from '../../src/services/WeatherService';
+import { generateOutfitSuggestions } from '../../src/engine/suggest';
 
 const CONTEXTS = [
   { id: 'school', name: 'Đi học', icon: 'school-outline' },
@@ -26,13 +29,71 @@ const CONTEXTS = [
 export default function TodayScreen() {
   const router = useRouter();
   const { email, name, openProfile } = useAuthStore();
+  const { items, loadItems } = useWardrobeStore();
+
   const [selectedContext, setSelectedContext] = useState<string>('school');
   const [showWeather, setShowWeather] = useState(true);
+  const [weather, setWeather] = useState<WeatherData>(WeatherService.getDefaultWeather());
+  const [isLoadingWeather, setIsLoadingWeather] = useState(false);
 
-  const teeItem = SEED_ITEMS.find((i) => i.id === '1');
-  const sneakerItem = SEED_ITEMS.find((i) => i.id === '7');
-  const jeansItem = SEED_ITEMS.find((i) => i.id === '4');
-  const jacketItem = SEED_ITEMS.find((i) => i.id === '3');
+  // Lấy thời tiết hiện tại khi vào màn hình
+  const fetchWeather = async () => {
+    setIsLoadingWeather(true);
+    try {
+      const data = await WeatherService.getCurrentWeather();
+      setWeather(data);
+    } catch (e) {
+      console.warn('[TodayScreen] Không thể lấy thời tiết, giữ mặc định:', e);
+    } finally {
+      setIsLoadingWeather(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchWeather();
+  }, []);
+
+  // Tự động tải lại đồ khi quay lại tab Hôm nay
+  useFocusEffect(
+    useCallback(() => {
+      loadItems();
+    }, [])
+  );
+
+  // Tính ngày hiện tại hiển thị tiếng Việt (VD: "THỨ HAI, 16 THÁNG 11")
+  const formattedDate = useMemo(() => {
+    const now = new Date();
+    const days = ['CHỦ NHẬT', 'THỨ HAI', 'THỨ BA', 'THỨ TƯ', 'THỨ NĂM', 'THỨ SÁU', 'THỨ BẢY'];
+    const dayName = days[now.getDay()];
+    const date = now.getDate();
+    const month = now.getMonth() + 1;
+    return `${dayName}, ${date} THÁNG ${month}`;
+  }, []);
+
+  const currentContext = CONTEXTS.find((c) => c.id === selectedContext) || CONTEXTS[0];
+
+  // Engine gợi ý đồ thông minh tích hợp thời tiết
+  const outfits = useMemo(() => {
+    return generateOutfitSuggestions(items, currentContext.name, weather);
+  }, [items, currentContext.name, weather]);
+
+  const currentOutfit = outfits[0];
+  const topItem = currentOutfit?.items[0];
+  const bottomItem = currentOutfit?.items[1];
+  const shoeItem = currentOutfit?.items[2];
+
+  // Mục "Lâu rồi chưa mặc nhỉ?": Lấy món đồ từ SQLite hoặc seed data
+  const reminderItem = useMemo(() => {
+    if (items.length > 0) {
+      const dbItem = items[items.length - 1];
+      return {
+        name: dbItem.name || `${dbItem.category} ${dbItem.color_name || ''}`.trim(),
+        image: { uri: dbItem.image_path },
+      };
+    }
+    const seedJacket = SEED_ITEMS.find((i) => i.id === '3');
+    return seedJacket ? { name: seedJacket.name, image: seedJacket.image } : null;
+  }, [items]);
 
   const displayName = name || (email ? email.split('@')[0] : 'An');
   const initial = displayName.charAt(0).toUpperCase();
@@ -48,25 +109,51 @@ export default function TodayScreen() {
         <View style={styles.header}>
           <View style={styles.headerLeft}>
             <Text style={styles.headerTitle}>Chào buổi sáng, {displayName}!</Text>
-            <Text style={styles.headerSubtitle}>THỨ HAI, 19 THÁNG 10</Text>
+            <Text style={styles.headerSubtitle}>{formattedDate}</Text>
           </View>
           <Pressable style={styles.avatar} onPress={openProfile}>
             <Text style={styles.avatarText}>{initial}</Text>
           </Pressable>
         </View>
 
-        {/* Weather card */}
-        {showWeather && (
+        {/* Weather card (Tuân thủ User Story Sprint-3) */}
+        {showWeather ? (
           <View style={styles.weatherCard}>
             <View style={styles.weatherLeft}>
-              <Ionicons name="partly-sunny-outline" size={24} color={colors.primary} />
+              <Ionicons
+                name={(weather.iconName as any) || 'partly-sunny-outline'}
+                size={24}
+                color={colors.primary}
+              />
               <View style={styles.weatherTextGroup}>
-                <Text style={styles.weatherTemp}>26° · Hà Nội, trời dịu mát</Text>
-                <Text style={styles.weatherNote}>Tham khảo thêm, không bắt buộc khi phối đồ</Text>
+                <Text style={styles.weatherTemp}>
+                  {weather.temperature}° · {weather.locationName}, {weather.conditionDescription}
+                </Text>
+                <Text style={styles.weatherNote}>{weather.recommendationAdvice}</Text>
               </View>
             </View>
-            <Pressable onPress={() => setShowWeather(false)} hitSlop={8}>
+            <Pressable
+              onPress={() => setShowWeather(false)}
+              hitSlop={10}
+              accessibilityLabel="Tạm ẩn widget thời tiết"
+            >
               <Ionicons name="close" size={18} color={colors.textLight} />
+            </Pressable>
+          </View>
+        ) : (
+          <View style={styles.weatherHiddenBar}>
+            <Pressable
+              style={styles.reopenWeatherBtn}
+              onPress={() => setShowWeather(true)}
+            >
+              <Ionicons
+                name={(weather.iconName as any) || 'partly-sunny-outline'}
+                size={14}
+                color={colors.primary}
+              />
+              <Text style={styles.reopenWeatherText}>
+                {weather.temperature}° {weather.locationName} · Hiện lại thời tiết
+              </Text>
             </Pressable>
           </View>
         )}
@@ -111,23 +198,23 @@ export default function TodayScreen() {
             {/* Collage 3 images */}
             <View style={styles.collageContainer}>
               <View style={styles.collageLeft}>
-                {teeItem && (
-                  <Image source={teeItem.image} style={styles.collageTopLeft} resizeMode="cover" />
+                {topItem && (
+                  <Image source={topItem.image} style={styles.collageTopLeft} resizeMode="cover" />
                 )}
-                {sneakerItem && (
-                  <Image source={sneakerItem.image} style={styles.collageBottomLeft} resizeMode="cover" />
+                {shoeItem && (
+                  <Image source={shoeItem.image} style={styles.collageBottomLeft} resizeMode="cover" />
                 )}
               </View>
-              {jeansItem && (
-                <Image source={jeansItem.image} style={styles.collageRight} resizeMode="cover" />
+              {bottomItem && (
+                <Image source={bottomItem.image} style={styles.collageRight} resizeMode="cover" />
               )}
             </View>
 
             {/* Card info */}
             <View style={styles.outfitMeta}>
               <View style={styles.outfitTitleGroup}>
-                <Text style={styles.outfitTitle}>Nhẹ nhàng đến lớp</Text>
-                <Text style={styles.outfitSubtitle}>Kem + xanh đậm · Dễ mặc, dễ phối</Text>
+                <Text style={styles.outfitTitle}>{currentOutfit.title}</Text>
+                <Text style={styles.outfitSubtitle}>{currentOutfit.subtitle}</Text>
               </View>
               <Ionicons name="sparkles" size={20} color={colors.primary} />
             </View>
@@ -137,27 +224,27 @@ export default function TodayScreen() {
               style={styles.ctaButton}
               onPress={() => router.push('/(tabs)/suggest')}
             >
-              <Text style={styles.ctaText}>Gợi ý phối đồ đi học ✨</Text>
+              <Text style={styles.ctaText}>Gợi ý phối đồ {currentContext.name.toLowerCase()} ✨</Text>
             </Pressable>
           </View>
         </View>
 
         {/* Lâu rồi chưa mặc nhỉ? */}
-        <Pressable
-          style={styles.reminderCard}
-          onPress={() => router.push('/(tabs)/wardrobe')}
-        >
-          {jacketItem && (
-            <Image source={jacketItem.image} style={styles.reminderThumb} resizeMode="cover" />
-          )}
-          <View style={styles.reminderInfo}>
-            <Text style={styles.reminderTitle}>Lâu rồi chưa mặc nhỉ?</Text>
-            <Text style={styles.reminderDesc}>
-              Áo khoác ô liu đã nghỉ 18 ngày. Thử phối lại hôm nay nhé.
-            </Text>
-          </View>
-          <Ionicons name="arrow-up-outline" size={20} color={colors.primary} style={styles.arrowIcon} />
-        </Pressable>
+        {reminderItem && (
+          <Pressable
+            style={styles.reminderCard}
+            onPress={() => router.push('/(tabs)/wardrobe')}
+          >
+            <Image source={reminderItem.image} style={styles.reminderThumb} resizeMode="cover" />
+            <View style={styles.reminderInfo}>
+              <Text style={styles.reminderTitle}>Lâu rồi chưa mặc nhỉ?</Text>
+              <Text style={styles.reminderDesc}>
+                {reminderItem.name} đã nghỉ một thời gian. Thử phối lại hôm nay nhé.
+              </Text>
+            </View>
+            <Ionicons name="arrow-up-outline" size={20} color={colors.primary} style={styles.arrowIcon} />
+          </Pressable>
+        )}
       </ScrollView>
     </SafeAreaView>
   );
@@ -204,6 +291,25 @@ const styles = StyleSheet.create({
   weatherTextGroup: { flex: 1 },
   weatherTemp: { fontSize: 13, fontWeight: '700', color: colors.text },
   weatherNote: { fontSize: 11, color: colors.textMuted, marginTop: 1 },
+  weatherHiddenBar: {
+    alignItems: 'flex-start',
+  },
+  reopenWeatherBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: radius.full,
+    backgroundColor: '#F0F9FB',
+    borderWidth: 1,
+    borderColor: '#E2F2F5',
+  },
+  reopenWeatherText: {
+    fontSize: 11,
+    color: colors.primary,
+    fontWeight: '600',
+  },
 
   // Context Selection
   section: { marginTop: spacing.xs, gap: spacing.sm },
