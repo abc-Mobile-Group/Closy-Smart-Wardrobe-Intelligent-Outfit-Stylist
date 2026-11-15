@@ -1,6 +1,7 @@
 import { useEffect } from 'react';
 import { ActivityIndicator, Platform, StyleSheet, View } from 'react-native';
 import { Stack, useRouter, useSegments } from 'expo-router';
+import { StatusBar } from 'expo-status-bar';
 import { setUnauthorizedHandler } from '../src/api/client';
 import { getDb } from '../src/db/database';
 import { useAuthStore } from '../src/store/authStore';
@@ -59,7 +60,35 @@ export default function RootLayout() {
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.bg }}>
-      <Stack screenOptions={{ headerShown: false }} />
+      <StatusBar style="dark" backgroundColor={colors.bg} />
+      <Stack
+        screenOptions={{
+          headerShown: false,
+          contentStyle: { backgroundColor: colors.bg },
+          animation: 'fade',
+        }}
+      >
+        <Stack.Screen
+          name="(tabs)"
+          options={{ headerShown: false, contentStyle: { backgroundColor: colors.bg } }}
+        />
+        <Stack.Screen
+          name="outfit-detail"
+          options={{
+            headerShown: false,
+            contentStyle: { backgroundColor: colors.bg },
+            animation: 'slide_from_right',
+          }}
+        />
+        <Stack.Screen
+          name="add-item"
+          options={{
+            headerShown: false,
+            contentStyle: { backgroundColor: colors.bg },
+            animation: 'slide_from_right',
+          }}
+        />
+      </Stack>
       <ProfileModal visible={isProfileOpen} onClose={closeProfile} />
       {status === 'loading' && (
         <View style={styles.splash}>

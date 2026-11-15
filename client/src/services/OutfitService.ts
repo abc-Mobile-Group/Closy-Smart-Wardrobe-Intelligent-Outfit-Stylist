@@ -123,5 +123,5 @@ export class OutfitService {
   }
 }
 
-}
+
 

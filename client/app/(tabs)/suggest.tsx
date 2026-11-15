@@ -222,7 +222,20 @@ export default function SuggestScreen() {
 
                 <Pressable
                   style={styles.adjustBtn}
-                  onPress={() => router.push('/outfit-detail')}
+                  onPress={() =>
+                    router.push({
+                      pathname: '/outfit-detail',
+                      params: {
+                        context: selectedContext,
+                        title: mainOutfit.title,
+                        subtitle: mainOutfit.subtitle,
+                        type: mainOutfit.type || 'two_piece',
+                        harmonyBadge: mainOutfit.harmonyBadge || '',
+                        itemsJson: JSON.stringify(mainOutfit.items),
+                        itemIds: mainOutfit.items.map((i) => i.id).join(','),
+                      },
+                    })
+                  }
                 >
                   <Text style={styles.adjustBtnText}>Chọn bộ này</Text>
                   <Ionicons name="arrow-forward" size={16} color={colors.onPrimary} />
@@ -239,7 +252,20 @@ export default function SuggestScreen() {
                   <Pressable
                     key={alt.id || idx}
                     style={styles.altCard}
-                    onPress={() => router.push('/outfit-detail')}
+                    onPress={() =>
+                      router.push({
+                        pathname: '/outfit-detail',
+                        params: {
+                          context: selectedContext,
+                          title: alt.title,
+                          subtitle: alt.subtitle,
+                          type: alt.type || 'two_piece',
+                          harmonyBadge: alt.harmonyBadge || '',
+                          itemsJson: JSON.stringify(alt.items),
+                          itemIds: alt.items.map((i) => i.id).join(','),
+                        },
+                      })
+                    }
                   >
                     <View style={styles.altThumbs}>
                       {alt.items[0] && (

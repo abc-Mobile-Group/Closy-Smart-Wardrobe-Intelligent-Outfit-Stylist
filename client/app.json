@@ -6,8 +6,10 @@
     "scheme": "closy",
     "orientation": "portrait",
     "userInterfaceStyle": "light",
+    "backgroundColor": "#FDFBF7",
     "android": {
-      "package": "com.nhom.closy"
+      "package": "com.nhom.closy",
+      "backgroundColor": "#FDFBF7"
     },
     "plugins": [
       "expo-router",

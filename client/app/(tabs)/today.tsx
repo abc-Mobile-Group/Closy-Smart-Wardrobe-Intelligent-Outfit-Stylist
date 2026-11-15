@@ -370,9 +370,22 @@ export default function TodayScreen() {
                 {/* CTA Button */}
                 <Pressable
                   style={styles.ctaButton}
-                  onPress={() => router.push('/(tabs)/suggest')}
+                  onPress={() =>
+                    router.push({
+                      pathname: '/outfit-detail',
+                      params: {
+                        context: currentContext.name,
+                        title: currentOutfit.title,
+                        subtitle: currentOutfit.subtitle,
+                        type: currentOutfit.type || 'two_piece',
+                        harmonyBadge: currentOutfit.harmonyBadge || '',
+                        itemsJson: JSON.stringify(currentOutfit.items),
+                        itemIds: currentOutfit.items.map((i) => i.id).join(','),
+                      },
+                    })
+                  }
                 >
-                  <Text style={styles.ctaText}>Gợi ý phối đồ {currentContext.name.toLowerCase()} ✨</Text>
+                  <Text style={styles.ctaText}>Chi tiết bộ phối {currentContext.name.toLowerCase()} ✨</Text>
                 </Pressable>
               </View>
 
