@@ -45,7 +45,7 @@ def test_process_image_rejects_non_image():
     files = {"file": ("test.txt", b"Hello world", "text/plain")}
     res = client.post("/image/process", headers=headers, files=files)
     assert res.status_code == 400
-    assert "Định dạng tệp không được hỗ trợ" in res.json()["detail"]
+    assert "Dữ liệu ảnh bị lỗi hoặc không thể giải mã" in res.json()["detail"]
 
 
 def test_process_image_rejects_empty_file():

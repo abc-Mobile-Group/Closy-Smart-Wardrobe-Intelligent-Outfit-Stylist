@@ -1,4 +1,4 @@
-export type Category = 'Áo' | 'Quần' | 'Váy' | 'Giày';
+export type Category = 'Áo' | 'Quần' | 'Váy' | 'Đầm' | 'Giày';
 
 export type Formality = 1 | 3 | 5;
 

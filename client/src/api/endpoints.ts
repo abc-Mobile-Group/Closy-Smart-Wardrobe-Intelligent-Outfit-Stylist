@@ -73,13 +73,55 @@ export type ProcessImageResponse = {
   color?: ProcessedColor;
   palette?: ColorPaletteItem[];
   process_time_sec?: number;
-  category?: 'Áo' | 'Quần' | 'Váy' | 'Giày';
+  category?: 'Áo' | 'Quần' | 'Váy' | 'Đầm' | 'Giày';
   name?: string;
   formality?: 1 | 3 | 5;
   contexts?: string[];
   is_clothing?: boolean;
   rejection_reason?: string;
   message?: string;
+};
+
+export interface OutfitItemDTO {
+  id: number | string;
+  name: string;
+  category: 'Áo' | 'Quần' | 'Váy' | 'Đầm' | 'Giày';
+  color_name?: string;
+  color_hex?: string;
+  image_path?: string;
+}
+
+export interface SuggestedOutfitDTO {
+  type: 'one_piece' | 'two_piece';
+  score: number;
+  harmony_score: number;
+  harmony_type: 'neutral' | 'analogous' | 'complementary' | 'clash';
+  harmony_title: string;
+  harmony_badge: string;
+  title: string;
+  subtitle: string;
+  items: OutfitItemDTO[];
+}
+
+export interface OutfitSuggestResponse {
+  success: boolean;
+  outfits: SuggestedOutfitDTO[];
+  count?: number;
+  context?: string;
+  weather_advice?: string;
+  message?: string;
+}
+
+export const outfitApi = {
+  suggest: (payload: { items: any[]; context: string; weather?: any }) =>
+    apiFetch<OutfitSuggestResponse>(
+      '/outfit/suggest',
+      {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      },
+      { auth: true, timeoutMs: 15000 },
+    ),
 };
 
 export const imageApi = {

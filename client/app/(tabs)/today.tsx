@@ -13,11 +13,10 @@ import { useFocusEffect, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors, radius, spacing } from '../../src/constants/theme';
-import { SEED_ITEMS } from '../../src/constants/seedData';
 import { useAuthStore } from '../../src/store/authStore';
 import { useWardrobeStore } from '../../src/store/wardrobeStore';
 import { WeatherData, WeatherService } from '../../src/services/WeatherService';
-import { generateOutfitSuggestions } from '../../src/engine/suggest';
+import { OutfitService, SuggestedOutfit } from '../../src/services/OutfitService';
 
 const CONTEXTS = [
   { id: 'school', name: 'Đi học', icon: 'school-outline' },
@@ -35,6 +34,8 @@ export default function TodayScreen() {
   const [showWeather, setShowWeather] = useState(true);
   const [weather, setWeather] = useState<WeatherData>(WeatherService.getDefaultWeather());
   const [isLoadingWeather, setIsLoadingWeather] = useState(false);
+  const [outfits, setOutfits] = useState<SuggestedOutfit[]>([]);
+  const [isLoadingOutfits, setIsLoadingOutfits] = useState(false);
 
   // Lấy thời tiết hiện tại khi vào màn hình
   const fetchWeather = async () => {
@@ -72,17 +73,34 @@ export default function TodayScreen() {
 
   const currentContext = CONTEXTS.find((c) => c.id === selectedContext) || CONTEXTS[0];
 
-  // Engine gợi ý đồ thông minh tích hợp thời tiết
-  const outfits = useMemo(() => {
-    return generateOutfitSuggestions(items, currentContext.name, weather);
+  // Gọi bộ máy gợi ý phối đồ từ Backend (với fallback Local-First)
+  useEffect(() => {
+    let isMounted = true;
+    const fetchSuggestions = async () => {
+      if (items.length === 0) {
+        if (isMounted) setOutfits([]);
+        return;
+      }
+      setIsLoadingOutfits(true);
+      try {
+        const list = await OutfitService.getSuggestions(items, currentContext.name, weather);
+        if (isMounted) setOutfits(list);
+      } catch (err) {
+        console.warn('[TodayScreen] Lỗi lấy gợi ý:', err);
+      } finally {
+        if (isMounted) setIsLoadingOutfits(false);
+      }
+    };
+
+    fetchSuggestions();
+    return () => {
+      isMounted = false;
+    };
   }, [items, currentContext.name, weather]);
 
-  const currentOutfit = outfits[0];
-  const topItem = currentOutfit?.items[0];
-  const bottomItem = currentOutfit?.items[1];
-  const shoeItem = currentOutfit?.items[2];
+  const currentOutfit = outfits.length > 0 ? outfits[0] : null;
 
-  // Mục "Lâu rồi chưa mặc nhỉ?": Lấy món đồ từ SQLite hoặc seed data
+  // Mục "Lâu rồi chưa mặc nhỉ?": Chỉ lấy từ đồ thật của người dùng
   const reminderItem = useMemo(() => {
     if (items.length > 0) {
       const dbItem = items[items.length - 1];
@@ -91,8 +109,7 @@ export default function TodayScreen() {
         image: { uri: dbItem.image_path },
       };
     }
-    const seedJacket = SEED_ITEMS.find((i) => i.id === '3');
-    return seedJacket ? { name: seedJacket.name, image: seedJacket.image } : null;
+    return null;
   }, [items]);
 
   const displayName = name || (email ? email.split('@')[0] : 'An');
@@ -193,40 +210,108 @@ export default function TodayScreen() {
             </Pressable>
           </View>
 
-          {/* Large Outfit Inspiration Card */}
-          <View style={styles.outfitCard}>
-            {/* Collage 3 images */}
-            <View style={styles.collageContainer}>
-              <View style={styles.collageLeft}>
-                {topItem && (
-                  <Image source={topItem.image} style={styles.collageTopLeft} resizeMode="cover" />
-                )}
-                {shoeItem && (
-                  <Image source={shoeItem.image} style={styles.collageBottomLeft} resizeMode="cover" />
+          {currentOutfit ? (
+            /* Large Outfit Inspiration Card */
+            <View style={styles.outfitCard}>
+              {/* Collage */}
+              <View style={styles.collageContainer}>
+                {currentOutfit.type === 'one_piece' ? (
+                  currentOutfit.items.length === 1 ? (
+                    <Image
+                      source={currentOutfit.items[0].image}
+                      style={styles.collageFull}
+                      resizeMode="contain"
+                    />
+                  ) : (
+                    <>
+                      <View style={styles.collageLeft}>
+                        {currentOutfit.items[1] && (
+                          <Image
+                            source={currentOutfit.items[1].image}
+                            style={styles.collageSingleLeft}
+                            resizeMode="contain"
+                          />
+                        )}
+                        {currentOutfit.items[2] && (
+                          <Image
+                            source={currentOutfit.items[2].image}
+                            style={styles.collageBottomLeft}
+                            resizeMode="contain"
+                          />
+                        )}
+                      </View>
+                      <Image
+                        source={currentOutfit.items[0].image}
+                        style={styles.collageRight}
+                        resizeMode="contain"
+                      />
+                    </>
+                  )
+                ) : (
+                  <>
+                    <View style={styles.collageLeft}>
+                      {currentOutfit.items[0] && (
+                        <Image
+                          source={currentOutfit.items[0].image}
+                          style={styles.collageTopLeft}
+                          resizeMode="contain"
+                        />
+                      )}
+                      {currentOutfit.items[2] && (
+                        <Image
+                          source={currentOutfit.items[2].image}
+                          style={styles.collageBottomLeft}
+                          resizeMode="contain"
+                        />
+                      )}
+                    </View>
+                    {currentOutfit.items[1] && (
+                      <Image
+                        source={currentOutfit.items[1].image}
+                        style={styles.collageRight}
+                        resizeMode="contain"
+                      />
+                    )}
+                  </>
                 )}
               </View>
-              {bottomItem && (
-                <Image source={bottomItem.image} style={styles.collageRight} resizeMode="cover" />
-              )}
-            </View>
 
-            {/* Card info */}
-            <View style={styles.outfitMeta}>
-              <View style={styles.outfitTitleGroup}>
-                <Text style={styles.outfitTitle}>{currentOutfit.title}</Text>
-                <Text style={styles.outfitSubtitle}>{currentOutfit.subtitle}</Text>
+              {/* Card info */}
+              <View style={styles.outfitMeta}>
+                <View style={styles.outfitTitleGroup}>
+                  <Text style={styles.outfitTitle}>{currentOutfit.title}</Text>
+                  <Text style={styles.outfitSubtitle}>{currentOutfit.subtitle}</Text>
+                </View>
+                <View style={styles.harmonyTagBadge}>
+                  <Text style={styles.harmonyTagText}>{currentOutfit.harmonyBadge || '+3 Phối đẹp'}</Text>
+                </View>
               </View>
-              <Ionicons name="sparkles" size={20} color={colors.primary} />
-            </View>
 
-            {/* CTA Button */}
-            <Pressable
-              style={styles.ctaButton}
-              onPress={() => router.push('/(tabs)/suggest')}
-            >
-              <Text style={styles.ctaText}>Gợi ý phối đồ {currentContext.name.toLowerCase()} ✨</Text>
-            </Pressable>
-          </View>
+              {/* CTA Button */}
+              <Pressable
+                style={styles.ctaButton}
+                onPress={() => router.push('/(tabs)/suggest')}
+              >
+                <Text style={styles.ctaText}>Gợi ý phối đồ {currentContext.name.toLowerCase()} ✨</Text>
+              </Pressable>
+            </View>
+          ) : (
+            <View style={styles.emptyOutfitCard}>
+              <Ionicons name="sparkles-outline" size={32} color={colors.primary} />
+              <Text style={styles.emptyOutfitTitle}>Chưa có đủ đồ để phối</Text>
+              <Text style={styles.emptyOutfitDesc}>
+                {items.length === 0
+                  ? 'Tủ đồ của bạn chưa có trang phục nào. Hãy chụp hoặc thêm áo, quần hoặc đầm để Closy gợi ý nhé!'
+                  : 'Hãy thêm thêm áo, quần hoặc đầm để Closy tạo các bộ phối chuẩn phong cách!'}
+              </Text>
+              <Pressable
+                style={styles.ctaButton}
+                onPress={() => router.push('/add-item')}
+              >
+                <Text style={styles.ctaText}>Thêm món đồ đầu tiên 📸</Text>
+              </Pressable>
+            </View>
+          )}
         </View>
 
         {/* Lâu rồi chưa mặc nhỉ? */}
@@ -352,6 +437,19 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
   },
   collageLeft: { flex: 1, gap: spacing.sm },
+  collageSingleLeft: {
+    flex: 1,
+    width: '100%',
+    height: '100%',
+    borderRadius: radius.md,
+    backgroundColor: '#EAE6E1',
+  },
+  collageFull: {
+    width: '100%',
+    height: '100%',
+    borderRadius: radius.md,
+    backgroundColor: '#EAE6E1',
+  },
   collageTopLeft: {
     flex: 1,
     width: '100%',
@@ -379,6 +477,39 @@ const styles = StyleSheet.create({
   outfitTitleGroup: { flex: 1 },
   outfitTitle: { fontSize: 16, fontWeight: '700', color: colors.text },
   outfitSubtitle: { fontSize: 13, color: colors.textMuted, marginTop: 2 },
+  harmonyTagBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: radius.full,
+    backgroundColor: '#E0F2FE',
+  },
+  harmonyTagText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#0369A1',
+  },
+
+  emptyOutfitCard: {
+    backgroundColor: colors.surfaceCard,
+    borderRadius: radius.lg,
+    padding: spacing.lg,
+    borderWidth: 1,
+    borderColor: colors.border,
+    alignItems: 'center',
+    gap: spacing.sm,
+  },
+  emptyOutfitTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: colors.text,
+  },
+  emptyOutfitDesc: {
+    fontSize: 13,
+    color: colors.textMuted,
+    textAlign: 'center',
+    lineHeight: 18,
+    marginBottom: spacing.xs,
+  },
 
   ctaButton: {
     backgroundColor: colors.primary,

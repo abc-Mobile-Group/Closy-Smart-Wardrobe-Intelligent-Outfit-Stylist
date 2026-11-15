@@ -12,24 +12,22 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors, radius, spacing } from '../../src/constants/theme';
-import { SEED_ITEMS } from '../../src/constants/seedData';
 import { useAuthStore } from '../../src/store/authStore';
+import { useWardrobeStore } from '../../src/store/wardrobeStore';
 
 const DAYS_OF_WEEK = ['T2', 'T3', 'T4', 'T5', 'T6', 'T7', 'CN'];
 const WORN_DAYS = [1, 6, 9, 12, 15, 17, 19];
 
 export default function HistoryScreen() {
   const { email, name, openProfile } = useAuthStore();
+  const { items } = useWardrobeStore();
   const [showBanner, setShowBanner] = useState(true);
   const [selectedDay, setSelectedDay] = useState(19);
 
   const displayName = name || (email ? email.split('@')[0] : 'An');
   const initial = displayName.charAt(0).toUpperCase();
 
-  const teeItem = SEED_ITEMS.find((i) => i.id === '1');
-  const jeansItem = SEED_ITEMS.find((i) => i.id === '4');
-  const sneakerItem = SEED_ITEMS.find((i) => i.id === '7');
-  const shirtItem = SEED_ITEMS.find((i) => i.id === '2');
+  const userItems = items.slice(0, 3);
 
   return (
     <SafeAreaView style={styles.safeArea} edges={['top']}>
@@ -125,47 +123,39 @@ export default function HistoryScreen() {
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Hôm nay, {selectedDay} tháng 10</Text>
 
-          <View style={styles.todayOutfitCard}>
-            {/* 3 items horizontal */}
-            <View style={styles.outfitRow}>
-              {teeItem && (
-                <Image source={teeItem.image} style={styles.outfitItemImg} resizeMode="cover" />
-              )}
-              {jeansItem && (
-                <Image source={jeansItem.image} style={styles.outfitItemImg} resizeMode="cover" />
-              )}
-              {sneakerItem && (
-                <Image source={sneakerItem.image} style={styles.outfitItemImg} resizeMode="cover" />
-              )}
-            </View>
-
-            {/* Meta */}
-            <View style={styles.outfitCardFooter}>
-              <View>
-                <Text style={styles.outfitCardTitle}>Nhẹ nhàng đến lớp</Text>
-                <Text style={styles.outfitCardDesc}>Đi học · Áo thun, jeans, sneaker</Text>
+          {userItems.length > 0 ? (
+            <View style={styles.todayOutfitCard}>
+              {/* items horizontal */}
+              <View style={styles.outfitRow}>
+                {userItems.map((it) => (
+                  <Image
+                    key={it.id}
+                    source={{ uri: it.image_path }}
+                    style={styles.outfitItemImg}
+                    resizeMode="contain"
+                  />
+                ))}
               </View>
-              <View style={styles.wornBadge}>
-                <Ionicons name="checkmark-circle-outline" size={14} color={colors.primary} />
-                <Text style={styles.wornBadgeText}>Đã mặc</Text>
+
+              {/* Meta */}
+              <View style={styles.outfitCardFooter}>
+                <View>
+                  <Text style={styles.outfitCardTitle}>{userItems[0].name}</Text>
+                  <Text style={styles.outfitCardDesc}>Bộ đồ từ tủ đồ cá nhân của bạn</Text>
+                </View>
+                <View style={styles.wornBadge}>
+                  <Ionicons name="checkmark-circle-outline" size={14} color={colors.primary} />
+                  <Text style={styles.wornBadgeText}>Đã mặc</Text>
+                </View>
               </View>
             </View>
-          </View>
-        </View>
-
-        {/* Past History */}
-        <View style={styles.section}>
-          <Text style={styles.pastDateLabel}>THỨ BẢY, 17 THÁNG 10</Text>
-          <View style={styles.pastCard}>
-            {shirtItem && (
-              <Image source={shirtItem.image} style={styles.pastThumb} resizeMode="cover" />
-            )}
-            <View style={styles.pastInfo}>
-              <Text style={styles.pastTitle}>Gọn gàng, sáng sủa</Text>
-              <Text style={styles.pastSubtitle}>Đi chơi · Sơ mi trắng + kaki be</Text>
+          ) : (
+            <View style={styles.emptyHistoryBox}>
+              <Ionicons name="calendar-outline" size={32} color={colors.primary} />
+              <Text style={styles.emptyHistoryText}>Chưa có lịch sử mặc đồ</Text>
+              <Text style={styles.emptyHistorySub}>Hãy chọn và xác nhận trang phục bạn mặc để lưu lịch sử nhé.</Text>
             </View>
-            <Ionicons name="chevron-forward" size={18} color={colors.textLight} />
-          </View>
+          )}
         </View>
       </ScrollView>
     </SafeAreaView>
@@ -324,6 +314,25 @@ const styles = StyleSheet.create({
     backgroundColor: '#F0F9FB',
   },
   wornBadgeText: { fontSize: 11, fontWeight: '700', color: colors.primary },
+  emptyHistoryBox: {
+    backgroundColor: colors.surfaceCard,
+    borderRadius: radius.md,
+    padding: spacing.lg,
+    borderWidth: 1,
+    borderColor: colors.border,
+    alignItems: 'center',
+    gap: spacing.xs,
+  },
+  emptyHistoryText: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: colors.text,
+  },
+  emptyHistorySub: {
+    fontSize: 12,
+    color: colors.textMuted,
+    textAlign: 'center',
+  },
 
   // Past
   pastDateLabel: { fontSize: 11, fontWeight: '700', color: colors.textMuted, letterSpacing: 0.5 },

@@ -320,7 +320,7 @@ def classify_clothing_heuristic(transparent_image: Image.Image, color_name: str)
                 contexts = ["Đi học", "Đi làm", "Đi chơi"]
                 name = f"Quần {color_name}".strip()
             else:
-                cat = "Váy"
+                cat = "Đầm"
                 formality = 3
                 contexts = ["Đi chơi", "Hẹn hò"]
                 name = f"Đầm {color_name}".strip()
@@ -422,8 +422,8 @@ def classify_clothing_with_ollama(raw_bytes: bytes, color_name: str) -> dict | N
             "  Trả về JSON:\n"
             "  {\n"
             '    "is_clothing": true,\n'
-            '    "category": "Áo" hoặc "Quần" hoặc "Váy" hoặc "Giày",\n'
-            '    "name": "Tên chi tiết món đồ tiếng Việt (VD: Áo sơ mi xanh ô liu, Váy đầm hồng pastel, Quần jeans xanh đậm...)",\n'
+            '    "category": "Áo" hoặc "Quần" hoặc "Váy" hoặc "Đầm" hoặc "Giày",\n'
+            '    "name": "Tên chi tiết món đồ tiếng Việt (VD: Áo sơ mi xanh ô liu, Đầm hồng pastel, Chân váy chữ A, Quần jeans xanh đậm...)",\n'
             '    "color_name": "Màu sắc chủ đạo của RIÊNG MÓN ĐỒ trang phục (loại trừ màu tóc, da mặt, nền). Chọn 1 trong 11 màu chuẩn: \'Trắng\', \'Kem\', \'Hồng phấn\', \'Xanh đậm\', \'Ô liu\', \'Đen\', \'Xám\', \'Nâu\', \'Xanh dương\', \'Đỏ\', \'Vàng\'",\n'
             '    "formality": 1 (thoải mái) hoặc 3 (lịch sự vừa) hoặc 5 (trang trọng),\n'
             '    "contexts": ["Đi học", "Đi làm", "Đi chơi", "Hẹn hò"] (chọn 1 đến 3 dịp phù hợp nhất)\n'
@@ -465,7 +465,7 @@ def classify_clothing_with_ollama(raw_bytes: bytes, color_name: str) -> dict | N
                         }
 
                     cat = parsed.get("category")
-                    if cat in ["Áo", "Quần", "Váy", "Giày"]:
+                    if cat in ["Áo", "Quần", "Váy", "Đầm", "Giày"]:
                         return {
                             "is_clothing": True,
                             "category": cat,
@@ -505,7 +505,7 @@ def classify_clothing_with_gemini(raw_bytes: bytes, color_name: str) -> dict | N
                                 "2. Nếu đúng là đồ mặc, trả về JSON:\n"
                                 "{\n"
                                 '  "is_clothing": true,\n'
-                                '  "category": "Áo" hoặc "Quần" hoặc "Váy" hoặc "Giày",\n'
+                                '  "category": "Áo" hoặc "Quần" hoặc "Váy" hoặc "Đầm" hoặc "Giày",\n'
                                 '  "name": "Tên chi tiết món đồ tiếng Việt (VD: Áo sơ mi lụa trắng, Quần jeans xanh đậm...)",\n'
                                 '  "formality": 1 hoặc 3 hoặc 5,\n'
                                 '  "contexts": ["Đi học", "Đi làm", "Đi chơi", "Hẹn hò"]\n'
@@ -537,7 +537,7 @@ def classify_clothing_with_gemini(raw_bytes: bytes, color_name: str) -> dict | N
                     "rejection_reason": parsed.get("rejection_reason")
                     or "Vui lòng chọn hoặc chụp ảnh trang phục để mặc (Áo, Quần, Váy, Giày)!",
                 }
-            if parsed.get("category") in ["Áo", "Quần", "Váy", "Giày"]:
+            if parsed.get("category") in ["Áo", "Quần", "Váy", "Đầm", "Giày"]:
                 return {
                     "is_clothing": True,
                     "category": parsed["category"],
@@ -686,4 +686,319 @@ async def process_image(
         "contexts": classification["contexts"],
         "process_time_sec": elapsed_sec,
     }
+
+
+# ==============================================================================
+# OUTFIT RECOMMENDATION ENGINE (Hệ thống gợi ý phối đồ thời trang thông minh)
+# ==============================================================================
+
+
+class WeatherPayload(BaseModel):
+    temperature: float = 26.0
+    weather_code: int = 2
+    is_raining: bool = False
+    location_name: str = "Hà Nội"
+    condition_description: str = "trời dịu mát"
+    recommendation_advice: str | None = None
+
+
+class WardrobeItemPayload(BaseModel):
+    id: int | str
+    name: str
+    category: str  # Áo, Quần, Váy, Đầm, Giày
+    image_path: str | None = None
+    color_h: float = 0.0
+    color_s: float = 0.0
+    color_l: float = 100.0
+    color_hex: str | None = None
+    color_name: str | None = None
+    formality: int = 3
+    contexts: list[str] | str = []
+
+
+class OutfitSuggestRequest(BaseModel):
+    items: list[WardrobeItemPayload]
+    context: str = "Đi học"
+    weather: WeatherPayload | None = None
+
+
+def is_neutral_hsl(s: float, l: float) -> bool:
+    """Định nghĩa vùng màu trung tính (Neutral): Saturation < 15 hoặc Lightness < 15 hoặc Lightness > 88"""
+    return s < 15 or l < 15 or l > 88
+
+
+def get_hue_circle_distance(h1: float, h2: float) -> float:
+    """Tính khoảng cách góc màu trên vòng tròn sắc độ H (0 - 360°): d = min(|H1 - H2|, 360 - |H1 - H2|)"""
+    diff = abs(h1 - h2) % 360
+    return min(diff, 360 - diff)
+
+
+def score_color_harmony_hsl(c1: dict, c2: dict) -> tuple[int, str, str, str]:
+    """Quy tắc chấm điểm thời trang Closy (Color Harmony HSL):
+    - Cặp có ít nhất 1 màu trung tính: +3 điểm (an toàn, dễ phối).
+    - Cặp màu tương đồng (Monochrome / Analogous: d < 35°): +3 điểm.
+    - Cặp màu tương phản bổ sung (Complementary: 150° <= d <= 210°): +2 điểm.
+    - Cặp màu xung đột chói gắt: -2 điểm.
+    """
+    s1 = c1.get("s", 0)
+    l1 = c1.get("l", 50)
+    s2 = c2.get("s", 0)
+    l2 = c2.get("l", 50)
+
+    n1 = is_neutral_hsl(s1, l1)
+    n2 = is_neutral_hsl(s2, l2)
+    d = get_hue_circle_distance(c1.get("h", 0), c2.get("h", 0))
+
+    if n1 or n2:
+        return 3, "neutral", "Trung tính an toàn", "+3 Trung tính"
+    if d < 35:
+        return 3, "analogous", "Tương đồng sắc thái (Tone sur tone)", "+3 Tone sur tone"
+    if 150 <= d <= 210:
+        return 2, "complementary", "Tương phản bổ sung", "+2 Tương phản"
+    return -2, "clash", "Xung đột chói gắt", "-2 Khó phối"
+
+
+def calculate_item_weather_score(name: str, category: str, color_name: str, weather: WeatherPayload) -> int:
+    """Chấm điểm thời tiết theo DoD Sprint-3"""
+    score = 0
+    name_lower = (name or "").lower()
+    color_lower = (color_name or "").lower()
+    temp = weather.temperature
+    is_raining = weather.is_raining
+
+    is_cold_or_rain = temp < 22 or is_raining
+    is_hot = temp > 32
+
+    if is_cold_or_rain:
+        if any(k in name_lower for k in ["khoác", "hoodie", "dài tay", "len", "cardigan", "vest", "nỉ"]):
+            score += 35
+        if category == "Quần" or any(k in name_lower for k in ["jeans", "dài", "kaki"]):
+            score += 25
+        if any(k in name_lower for k in ["cộc", "ngắn tay"]) or (category in ["Váy", "Đầm"] and is_raining):
+            score -= 20
+    elif is_hot:
+        if any(k in name_lower for k in ["thun", "cộc tay", "ngắn tay", "lụa", "croptop", "phông"]):
+            score += 30
+        if any(k in name_lower for k in ["short", "ngắn"]) or category in ["Váy", "Đầm"]:
+            score += 20
+        if any(k in color_lower for k in ["trắng", "kem", "be", "hồng", "vàng"]):
+            score += 15
+        if any(k in name_lower for k in ["khoác", "hoodie", "len", "nỉ"]):
+            score -= 40
+    else:
+        score += 10
+    return score
+
+
+def is_dress_item(item: WardrobeItemPayload) -> bool:
+    cat = (item.category or "").strip()
+    name_lower = (item.name or "").lower()
+    return cat == "Đầm" or (cat == "Váy" and any(k in name_lower for k in ["đầm", "dress", "liền"]))
+
+
+def is_top_item(item: WardrobeItemPayload) -> bool:
+    cat = (item.category or "").strip()
+    name_lower = (item.name or "").lower()
+    return cat == "Áo" and not any(k in name_lower for k in ["khoác", "jacket", "cardigan", "blazer", "vest"])
+
+
+def is_jacket_item(item: WardrobeItemPayload) -> bool:
+    cat = (item.category or "").strip()
+    name_lower = (item.name or "").lower()
+    return cat == "Áo" and any(k in name_lower for k in ["khoác", "jacket", "cardigan", "blazer", "vest"])
+
+
+def is_bottom_item(item: WardrobeItemPayload) -> bool:
+    cat = (item.category or "").strip()
+    return cat == "Quần" or (cat == "Váy" and not is_dress_item(item))
+
+
+def is_shoe_item(item: WardrobeItemPayload) -> bool:
+    return (item.category or "").strip() == "Giày"
+
+
+@app.post("/outfit/suggest")
+def suggest_outfits(body: OutfitSuggestRequest):
+    """Bộ máy gợi ý trang phục thông minh tại Backend (Backend Stylist Engine):
+    - Đảm bảo quy tắc thời trang chặt chẽ:
+      + ĐẦM (Dress): Trang phục liền thân độc lập, TUYỆT ĐỐI KHÔNG mặc chung Quần hay Áo (chỉ phối Giày hoặc Áo khoác ngoài khi trời lạnh).
+      + VÁY (Skirt): Chân váy (ngắn/dài), bắt buộc phối cùng Áo + Giày.
+      + QUẦN: Bắt buộc phối cùng Áo + Giày.
+    - Đo độ hòa hợp màu sắc ColorHarmonyEngine HSL (+3 trung tính, +3 tone-sur-tone, +2 tương phản, -2 xung đột).
+    - Đo điểm thời tiết (<22°C/mưa ưu tiên đồ ấm, >32°C ưu tiên đồ thoáng mát & màu sáng).
+    - Xếp hạng điểm số từ kho đồ người dùng thực tế.
+    """
+    raw_items = body.items
+    context = body.context or "Đi học"
+    weather = body.weather or WeatherPayload()
+
+    if not raw_items:
+        return {
+            "success": True,
+            "outfits": [],
+            "message": "Tủ đồ của bạn chưa có trang phục nào. Hãy thêm đồ vào tủ để Closy phối đồ cho bạn nhé!",
+        }
+
+    # Phân loại trang phục theo vai trò
+    dresses = [i for i in raw_items if is_dress_item(i)]
+    tops = [i for i in raw_items if is_top_item(i)]
+    jackets = [i for i in raw_items if is_jacket_item(i)]
+    bottoms = [i for i in raw_items if is_bottom_item(i)]
+    shoes = [i for i in raw_items if is_shoe_item(i)]
+
+    # Nếu không có áo thường nhưng có áo khoác, áo khoác có thể dùng làm top nếu thời tiết dịu/lạnh
+    if not tops and jackets:
+        tops = jackets
+
+    candidates = []
+
+    # 1. TẠO CÁC BỘ PHỐI TỪ ĐẦM (One-Piece Dress)
+    # Quy tắc: Đầm KHÔNG mặc cùng Quần và Áo!
+    for d in dresses:
+        d_color = {"h": d.color_h, "s": d.color_s, "l": d.color_l}
+        score = 50
+        weather_score = calculate_item_weather_score(d.name, "Đầm", d.color_name or "", weather)
+        score += weather_score
+
+        # Điểm bối cảnh
+        ctxs = d.contexts if isinstance(d.contexts, list) else (d.contexts or "").split(",")
+        if any(context.lower() in str(c).lower() for c in ctxs):
+            score += 20
+
+        # Phối giày (nếu có)
+        outfit_items = [d]
+        harmony_score = 3
+        harmony_type = "neutral"
+        harmony_title = "Đầm liền duyên dáng"
+        harmony_badge = "+3 Đầm liền"
+
+        best_shoe = None
+        if shoes:
+            # Chọn đôi giày hòa hợp nhất
+            best_shoe = shoes[0]
+            for s in shoes:
+                s_color = {"h": s.color_h, "s": s.color_s, "l": s.color_l}
+                hs, ht, _, _ = score_color_harmony_hsl(d_color, s_color)
+                if hs >= 2:
+                    best_shoe = s
+                    break
+            outfit_items.append(best_shoe)
+
+        # Nếu trời lạnh (<22°C hoặc có mưa) và có áo khoác ngoài -> Phối thêm áo khoác
+        if (weather.temperature < 22 or weather.is_raining) and jackets:
+            best_jacket = jackets[0]
+            for j in jackets:
+                j_color = {"h": j.color_h, "s": j.color_s, "l": j.color_l}
+                hs, ht, _, _ = score_color_harmony_hsl(d_color, j_color)
+                if hs >= 2:
+                    best_jacket = j
+                    harmony_score = hs
+                    harmony_type = ht
+                    break
+            outfit_items.insert(0, best_jacket)
+            score += 25
+
+        score += harmony_score * 10
+
+        candidates.append({
+            "type": "one_piece",
+            "score": score,
+            "harmony_score": harmony_score,
+            "harmony_type": harmony_type,
+            "harmony_title": harmony_title,
+            "harmony_badge": harmony_badge,
+            "title": f"Duyên dáng {d.name} · {context}",
+            "subtitle": f"Đầm liền {d.color_name or ''} thanh lịch, nhẹ nhàng",
+            "items": [
+                {
+                    "id": it.id,
+                    "name": it.name,
+                    "category": it.category,
+                    "color_name": it.color_name,
+                    "color_hex": it.color_hex,
+                    "image_path": it.image_path,
+                }
+                for it in outfit_items
+            ],
+        })
+
+    # 2. TẠO CÁC BỘ PHỐI TỪ ÁO + QUẦN/VÁY (Two-Piece)
+    # Quy tắc: Áo đi với Quần hoặc Chân váy (ngắn/dài)
+    for top in tops:
+        top_color = {"h": top.color_h, "s": top.color_s, "l": top.color_l}
+        top_w_score = calculate_item_weather_score(top.name, top.category, top.color_name or "", weather)
+
+        for bot in bottoms:
+            bot_color = {"h": bot.color_h, "s": bot.color_s, "l": bot.color_l}
+            bot_w_score = calculate_item_weather_score(bot.name, bot.category, bot.color_name or "", weather)
+
+            # Chấm điểm hòa hợp màu sắc ColorHarmonyEngine HSL
+            hs, ht, h_title, h_badge = score_color_harmony_hsl(top_color, bot_color)
+
+            score = 50 + (hs * 10) + top_w_score + bot_w_score
+
+            # Bối cảnh
+            top_ctxs = top.contexts if isinstance(top.contexts, list) else (top.contexts or "").split(",")
+            bot_ctxs = bot.contexts if isinstance(bot.contexts, list) else (bot.contexts or "").split(",")
+            if any(context.lower() in str(c).lower() for c in top_ctxs):
+                score += 10
+            if any(context.lower() in str(c).lower() for c in bot_ctxs):
+                score += 10
+
+            outfit_items = [top, bot]
+
+            # Giày
+            if shoes:
+                outfit_items.append(shoes[0])
+
+            # Đặt tiêu đề và phụ đề dựa trên thời tiết và loại hòa hợp màu
+            is_cold_or_rain = weather.temperature < 22 or weather.is_raining
+            is_hot = weather.temperature > 32
+
+            if is_cold_or_rain:
+                title = f"Ấm áp ngày lạnh · {context}" if not weather.is_raining else f"Gọn gàng ngày mưa · {context}"
+                subtitle = f"{top.color_name or 'Áo'} + {bot.color_name or 'Quần'} · {h_badge}"
+            elif is_hot:
+                title = f"Thoáng mát mùa hè · {context}"
+                subtitle = f"{top.color_name or 'Áo'} + {bot.color_name or 'Quần'} · {h_badge}"
+            else:
+                title = f"Năng động {context.lower()}"
+                subtitle = f"{top.color_name or 'Áo'} + {bot.color_name or 'Quần'} · {h_badge}"
+
+            candidates.append({
+                "type": "two_piece",
+                "score": score,
+                "harmony_score": hs,
+                "harmony_type": ht,
+                "harmony_title": h_title,
+                "harmony_badge": h_badge,
+                "title": title,
+                "subtitle": subtitle,
+                "items": [
+                    {
+                        "id": it.id,
+                        "name": it.name,
+                        "category": it.category,
+                        "color_name": it.color_name,
+                        "color_hex": it.color_hex,
+                        "image_path": it.image_path,
+                    }
+                    for it in outfit_items
+                ],
+            })
+
+    # Sắp xếp các bộ phối theo điểm số giảm dần
+    candidates.sort(key=lambda x: x["score"], reverse=True)
+
+    # Lấy top 5 gợi ý tốt nhất
+    top_suggestions = candidates[:5]
+
+    return {
+        "success": True,
+        "outfits": top_suggestions,
+        "count": len(top_suggestions),
+        "context": context,
+        "weather_advice": weather.recommendation_advice or weather.condition_description,
+    }
+
 

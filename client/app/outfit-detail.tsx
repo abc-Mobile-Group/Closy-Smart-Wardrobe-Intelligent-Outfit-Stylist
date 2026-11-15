@@ -11,23 +11,60 @@ import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors, radius, spacing } from '../src/constants/theme';
-import { SEED_ITEMS } from '../src/constants/seedData';
+import { useWardrobeStore } from '../src/store/wardrobeStore';
 
 export default function OutfitDetailScreen() {
   const router = useRouter();
+  const { items } = useWardrobeStore();
   const [isFavorite, setIsFavorite] = useState(false);
-  const [lockedItemIds, setLockedItemIds] = useState<string[]>(['1']); // Áo thun khóa mặc định
+  const [lockedItemIds, setLockedItemIds] = useState<string[]>([]);
 
-  // Các món trong bộ đồ
-  const teeItem = SEED_ITEMS.find((i) => i.id === '1');
-  const jeansItem = SEED_ITEMS.find((i) => i.id === '4');
-  const sneakerItem = SEED_ITEMS.find((i) => i.id === '7');
+  // Lấy trang phục từ tủ đồ thật của người dùng
+  const dressItem = items.find((i) => i.category === 'Đầm' || (i.category === 'Váy' && i.name?.toLowerCase().includes('đầm')));
+  const topItem = items.find((i) => i.category === 'Áo');
+  const bottomItem = items.find((i) => (i.category === 'Quần' || i.category === 'Váy') && i !== dressItem);
+  const shoeItem = items.find((i) => i.category === 'Giày');
 
-  const currentOutfitItems = [
-    { item: teeItem, role: 'Áo thun kem', meta: 'Đã khóa · không thay đổi' },
-    { item: jeansItem, role: 'Jeans xanh đậm', meta: 'Quần · Xanh đậm' },
-    { item: sneakerItem, role: 'Sneaker trắng', meta: 'Giày · Trắng' },
-  ];
+  const isOnePiece = !!dressItem && !topItem;
+
+  const currentOutfitItems = isOnePiece
+    ? [
+        {
+          item: dressItem ? { id: String(dressItem.id), name: dressItem.name, image: { uri: dressItem.image_path } } : null,
+          role: dressItem?.name || 'Đầm liền',
+          meta: 'Đầm liền · Tôn dáng thanh lịch',
+        },
+        shoeItem
+          ? {
+              item: { id: String(shoeItem.id), name: shoeItem.name, image: { uri: shoeItem.image_path } },
+              role: shoeItem.name,
+              meta: `Giày · ${shoeItem.color_name || 'Hài hòa'}`,
+            }
+          : null,
+      ].filter(Boolean)
+    : [
+        topItem
+          ? {
+              item: { id: String(topItem.id), name: topItem.name, image: { uri: topItem.image_path } },
+              role: topItem.name,
+              meta: `Áo · ${topItem.color_name || 'Thoải mái'}`,
+            }
+          : null,
+        bottomItem
+          ? {
+              item: { id: String(bottomItem.id), name: bottomItem.name, image: { uri: bottomItem.image_path } },
+              role: bottomItem.name,
+              meta: `${bottomItem.category} · ${bottomItem.color_name || 'Hài hòa'}`,
+            }
+          : null,
+        shoeItem
+          ? {
+              item: { id: String(shoeItem.id), name: shoeItem.name, image: { uri: shoeItem.image_path } },
+              role: shoeItem.name,
+              meta: `Giày · ${shoeItem.color_name || 'Năng động'}`,
+            }
+          : null,
+      ].filter(Boolean);
 
   const toggleLock = (id: string) => {
     setLockedItemIds((prev) =>
@@ -75,16 +112,22 @@ export default function OutfitDetailScreen() {
 
         {/* Outfit Collage Preview */}
         <View style={styles.collageContainer}>
-          <View style={styles.collageLeft}>
-            {teeItem && (
-              <Image source={teeItem.image} style={styles.collageTopLeft} resizeMode="cover" />
-            )}
-            {sneakerItem && (
-              <Image source={sneakerItem.image} style={styles.collageBottomLeft} resizeMode="cover" />
-            )}
-          </View>
-          {jeansItem && (
-            <Image source={jeansItem.image} style={styles.collageRight} resizeMode="cover" />
+          {isOnePiece && dressItem ? (
+            <Image source={{ uri: dressItem.image_path }} style={styles.collageFull} resizeMode="contain" />
+          ) : (
+            <>
+              <View style={styles.collageLeft}>
+                {topItem && (
+                  <Image source={{ uri: topItem.image_path }} style={styles.collageTopLeft} resizeMode="contain" />
+                )}
+                {shoeItem && (
+                  <Image source={{ uri: shoeItem.image_path }} style={styles.collageBottomLeft} resizeMode="contain" />
+                )}
+              </View>
+              {bottomItem && (
+                <Image source={{ uri: bottomItem.image_path }} style={styles.collageRight} resizeMode="contain" />
+              )}
+            </>
           )}
         </View>
 
@@ -92,7 +135,7 @@ export default function OutfitDetailScreen() {
         <View style={styles.paletteBox}>
           <Ionicons name="color-palette-outline" size={18} color={colors.primary} />
           <Text style={styles.paletteText}>
-            Kem + xanh đậm + trắng: bảng màu trung tính, gọn gàng và dễ mặc.
+            Phối màu thời trang thông minh theo quy tắc Color Harmony HSL.
           </Text>
         </View>
 
@@ -207,6 +250,7 @@ const styles = StyleSheet.create({
     borderColor: colors.border,
   },
   collageLeft: { flex: 1, gap: spacing.sm },
+  collageFull: { width: '100%', height: '100%', borderRadius: radius.md, backgroundColor: '#EAE6E1' },
   collageTopLeft: { flex: 1, width: '100%', borderRadius: radius.md, backgroundColor: '#EAE6E1' },
   collageBottomLeft: { flex: 1, width: '100%', borderRadius: radius.md, backgroundColor: '#EAE6E1' },
   collageRight: { flex: 1, height: '100%', borderRadius: radius.md, backgroundColor: '#EAE6E1' },

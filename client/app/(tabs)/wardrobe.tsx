@@ -19,7 +19,7 @@ import { useAuthStore } from '../../src/store/authStore';
 import { useWardrobeStore } from '../../src/store/wardrobeStore';
 import { WardrobeItem } from '../../src/types/item';
 
-const CATEGORIES = ['Tất cả', 'Áo', 'Quần', 'Váy', 'Giày'] as const;
+const CATEGORIES = ['Tất cả', 'Áo', 'Quần', 'Váy', 'Đầm', 'Giày'] as const;
 
 // Hàm hỗ trợ chèn các ô trống vô hình để hàng cuối của lưới 3 cột không bị tách lệch hai bên
 const formatGridData = (dataList: any[], numCols: number = 3) => {

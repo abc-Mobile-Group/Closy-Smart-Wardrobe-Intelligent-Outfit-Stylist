@@ -1,5 +1,6 @@
-import React, { useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import {
+  ActivityIndicator,
   Image,
   Pressable,
   ScrollView,
@@ -7,30 +8,67 @@ import {
   Text,
   View,
 } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useFocusEffect, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors, radius, spacing } from '../../src/constants/theme';
-import { SEED_ITEMS } from '../../src/constants/seedData';
 import { useAuthStore } from '../../src/store/authStore';
+import { useWardrobeStore } from '../../src/store/wardrobeStore';
+import { WeatherData, WeatherService } from '../../src/services/WeatherService';
+import { OutfitService, SuggestedOutfit } from '../../src/services/OutfitService';
 
 const CONTEXTS = ['Đi học', 'Đi làm', 'Đi chơi', 'Hẹn hò'] as const;
 
 export default function SuggestScreen() {
   const router = useRouter();
   const { email, name, openProfile } = useAuthStore();
+  const { items, loadItems } = useWardrobeStore();
   const [selectedContext, setSelectedContext] = useState<string>('Đi học');
   const [liked, setLiked] = useState<boolean | null>(null);
+  const [weather, setWeather] = useState<WeatherData>(WeatherService.getDefaultWeather());
+  const [outfits, setOutfits] = useState<SuggestedOutfit[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
+
+  // Tải danh sách đồ và thời tiết
+  useFocusEffect(
+    useCallback(() => {
+      loadItems();
+    }, [])
+  );
+
+  useEffect(() => {
+    WeatherService.getCurrentWeather().then(setWeather).catch(() => {});
+  }, []);
+
+  // Lấy danh sách gợi ý từ Backend Stylist Engine (Local-First fallback)
+  useEffect(() => {
+    let isMounted = true;
+    const fetchRecs = async () => {
+      if (items.length === 0) {
+        if (isMounted) setOutfits([]);
+        return;
+      }
+      setIsLoading(true);
+      try {
+        const list = await OutfitService.getSuggestions(items, selectedContext, weather);
+        if (isMounted) setOutfits(list);
+      } catch (err) {
+        console.warn('[SuggestScreen] Lỗi lấy gợi ý:', err);
+      } finally {
+        if (isMounted) setIsLoading(false);
+      }
+    };
+    fetchRecs();
+    return () => {
+      isMounted = false;
+    };
+  }, [items, selectedContext, weather]);
 
   const displayName = name || (email ? email.split('@')[0] : 'An');
   const initial = displayName.charAt(0).toUpperCase();
 
-  const teeItem = SEED_ITEMS.find((i) => i.id === '1');
-  const sneakerItem = SEED_ITEMS.find((i) => i.id === '7');
-  const jeansItem = SEED_ITEMS.find((i) => i.id === '4');
-  const shirtItem = SEED_ITEMS.find((i) => i.id === '2');
-  const kakiItem = SEED_ITEMS.find((i) => i.id === '5');
-  const jacketItem = SEED_ITEMS.find((i) => i.id === '3');
+  const mainOutfit = outfits.length > 0 ? outfits[0] : null;
+  const altOutfits = outfits.slice(1, 3);
 
   return (
     <SafeAreaView style={styles.safeArea} edges={['top']}>
@@ -43,7 +81,11 @@ export default function SuggestScreen() {
         <View style={styles.header}>
           <View style={styles.headerLeft}>
             <Text style={styles.title}>Phối đồ {selectedContext.toLowerCase()}</Text>
-            <Text style={styles.subtitle}>3 lựa chọn từ những món bạn đang có</Text>
+            <Text style={styles.subtitle}>
+              {outfits.length > 0
+                ? `${outfits.length} lựa chọn từ những món trong tủ đồ của bạn`
+                : 'Gợi ý thông minh dựa trên độ hòa hợp màu sắc HSL'}
+            </Text>
           </View>
           <Pressable style={styles.avatar} onPress={openProfile}>
             <Text style={styles.avatarText}>{initial}</Text>
@@ -68,134 +110,194 @@ export default function SuggestScreen() {
           })}
         </View>
 
-        {/* Main Recommendation Section */}
-        <View style={styles.recommendationBox}>
-          {/* Box Header with Pagination Dots */}
-          <View style={styles.recHeader}>
-            <Text style={styles.recTag}>GỢI Ý CHO BẠN</Text>
-            <View style={styles.paginationDots}>
-              <View style={styles.dot} />
-              <View style={[styles.dot, styles.dotActive]} />
-              <View style={styles.dot} />
-            </View>
+        {isLoading ? (
+          <View style={styles.loadingBox}>
+            <ActivityIndicator size="large" color={colors.primary} />
+            <Text style={styles.loadingText}>Backend AI Stylist đang phối đồ...</Text>
           </View>
+        ) : mainOutfit ? (
+          <>
+            {/* Main Recommendation Section */}
+            <View style={styles.recommendationBox}>
+              {/* Box Header with Pagination Dots */}
+              <View style={styles.recHeader}>
+                <View style={styles.badgeWrapper}>
+                  <Text style={styles.recTag}>GỢI Ý TỐT NHẤT</Text>
+                  <View style={styles.harmonyBadge}>
+                    <Text style={styles.harmonyBadgeText}>{mainOutfit.harmonyBadge}</Text>
+                  </View>
+                </View>
+                <View style={styles.paginationDots}>
+                  <View style={[styles.dot, styles.dotActive]} />
+                  {altOutfits.map((_, i) => (
+                    <View key={i} style={styles.dot} />
+                  ))}
+                </View>
+              </View>
 
-          {/* Collage */}
-          <View style={styles.collageContainer}>
-            <View style={styles.collageLeft}>
-              {teeItem && (
-                <Image source={teeItem.image} style={styles.collageTopLeft} resizeMode="cover" />
-              )}
-              {sneakerItem && (
-                <Image source={sneakerItem.image} style={styles.collageBottomLeft} resizeMode="cover" />
-              )}
+              {/* Collage */}
+              <View style={styles.collageContainer}>
+                {mainOutfit.type === 'one_piece' ? (
+                  mainOutfit.items.length === 1 ? (
+                    <Image
+                      source={mainOutfit.items[0].image}
+                      style={styles.collageFull}
+                      resizeMode="contain"
+                    />
+                  ) : (
+                    <>
+                      <View style={styles.collageLeft}>
+                        {mainOutfit.items[1] && (
+                          <Image
+                            source={mainOutfit.items[1].image}
+                            style={styles.collageSingleLeft}
+                            resizeMode="contain"
+                          />
+                        )}
+                      </View>
+                      <Image
+                        source={mainOutfit.items[0].image}
+                        style={styles.collageRight}
+                        resizeMode="contain"
+                      />
+                    </>
+                  )
+                ) : (
+                  <>
+                    <View style={styles.collageLeft}>
+                      {mainOutfit.items[0] && (
+                        <Image
+                          source={mainOutfit.items[0].image}
+                          style={styles.collageTopLeft}
+                          resizeMode="contain"
+                        />
+                      )}
+                      {mainOutfit.items[2] && (
+                        <Image
+                          source={mainOutfit.items[2].image}
+                          style={styles.collageBottomLeft}
+                          resizeMode="contain"
+                        />
+                      )}
+                    </View>
+                    {mainOutfit.items[1] && (
+                      <Image
+                        source={mainOutfit.items[1].image}
+                        style={styles.collageRight}
+                        resizeMode="contain"
+                      />
+                    )}
+                  </>
+                )}
+              </View>
+
+              {/* Outfit Info */}
+              <View style={styles.outfitInfo}>
+                <Text style={styles.outfitTitle}>{mainOutfit.title}</Text>
+                <Text style={styles.outfitDesc}>{mainOutfit.subtitle}</Text>
+              </View>
+
+              {/* Feedback & Actions */}
+              <View style={styles.actionRow}>
+                <Pressable
+                  style={[styles.feedbackBtn, liked === true && styles.feedbackBtnActive]}
+                  onPress={() => setLiked(liked === true ? null : true)}
+                >
+                  <Ionicons
+                    name={liked === true ? 'thumbs-up' : 'thumbs-up-outline'}
+                    size={18}
+                    color={liked === true ? colors.primary : colors.textMuted}
+                  />
+                </Pressable>
+                <Pressable
+                  style={[styles.feedbackBtn, liked === false && styles.feedbackBtnActive]}
+                  onPress={() => setLiked(liked === false ? null : false)}
+                >
+                  <Ionicons
+                    name={liked === false ? 'thumbs-down' : 'thumbs-down-outline'}
+                    size={18}
+                    color={liked === false ? colors.danger : colors.textMuted}
+                  />
+                </Pressable>
+
+                <Pressable
+                  style={styles.adjustBtn}
+                  onPress={() => router.push('/outfit-detail')}
+                >
+                  <Text style={styles.adjustBtnText}>Chọn bộ này</Text>
+                  <Ionicons name="arrow-forward" size={16} color={colors.onPrimary} />
+                </Pressable>
+              </View>
             </View>
-            {jeansItem && (
-              <Image source={jeansItem.image} style={styles.collageRight} resizeMode="cover" />
+
+            {/* Alternative Section */}
+            {altOutfits.length > 0 && (
+              <View style={styles.altSection}>
+                <Text style={styles.altSectionTitle}>Hay thử một cảm giác khác?</Text>
+
+                {altOutfits.map((alt, idx) => (
+                  <Pressable
+                    key={alt.id || idx}
+                    style={styles.altCard}
+                    onPress={() => router.push('/outfit-detail')}
+                  >
+                    <View style={styles.altThumbs}>
+                      {alt.items[0] && (
+                        <Image
+                          source={alt.items[0].image}
+                          style={styles.altThumbImg}
+                          resizeMode="contain"
+                        />
+                      )}
+                      <View style={styles.altThumbsSub}>
+                        {alt.items[1] && (
+                          <Image
+                            source={alt.items[1].image}
+                            style={styles.altThumbSmall}
+                            resizeMode="contain"
+                          />
+                        )}
+                        {alt.items[2] && (
+                          <Image
+                            source={alt.items[2].image}
+                            style={styles.altThumbSmall}
+                            resizeMode="contain"
+                          />
+                        )}
+                      </View>
+                    </View>
+
+                    <View style={styles.altInfo}>
+                      <Text style={styles.altTitle}>{alt.title}</Text>
+                      <Text style={styles.altSub}>{alt.subtitle}</Text>
+                      <Text style={styles.altTag}>{alt.harmonyBadge}</Text>
+                    </View>
+
+                    <Ionicons name="chevron-forward" size={18} color={colors.textLight} />
+                  </Pressable>
+                ))}
+              </View>
             )}
-          </View>
-
-          {/* Outfit Info */}
-          <View style={styles.outfitInfo}>
-            <Text style={styles.outfitTitle}>Nhẹ nhàng đến lớp</Text>
-            <Text style={styles.outfitDesc}>
-              Phối trung tính: kem làm dịu xanh denim. Thoải mái cho cả ngày trên giảng đường.
+          </>
+        ) : (
+          /* Empty State */
+          <View style={styles.emptyContainer}>
+            <Ionicons name="shirt-outline" size={48} color={colors.primary} />
+            <Text style={styles.emptyTitle}>Chưa đủ trang phục để phối</Text>
+            <Text style={styles.emptyDesc}>
+              {items.length === 0
+                ? 'Tủ đồ của bạn đang trống. Hãy chụp hoặc thêm quần áo để Closy gợi ý phối đồ chuẩn phong cách nhé!'
+                : 'Bạn cần có ít nhất một chiếc đầm, hoặc một chiếc áo kèm quần/chân váy để tạo bộ phối.'}
             </Text>
-          </View>
-
-          {/* Feedback & Actions */}
-          <View style={styles.actionRow}>
             <Pressable
-              style={[styles.feedbackBtn, liked === true && styles.feedbackBtnActive]}
-              onPress={() => setLiked(liked === true ? null : true)}
+              style={styles.emptyBtn}
+              onPress={() => router.push('/add-item')}
             >
-              <Ionicons
-                name={liked === true ? 'thumbs-up' : 'thumbs-up-outline'}
-                size={18}
-                color={liked === true ? colors.primary : colors.textMuted}
-              />
-            </Pressable>
-            <Pressable
-              style={[styles.feedbackBtn, liked === false && styles.feedbackBtnActive]}
-              onPress={() => setLiked(liked === false ? null : false)}
-            >
-              <Ionicons
-                name={liked === false ? 'thumbs-down' : 'thumbs-down-outline'}
-                size={18}
-                color={liked === false ? colors.danger : colors.textMuted}
-              />
-            </Pressable>
-
-            <Pressable
-              style={styles.adjustBtn}
-              onPress={() => router.push('/outfit-detail')}
-            >
-              <Text style={styles.adjustBtnText}>Chọn & điều chỉnh</Text>
-              <Ionicons name="arrow-forward" size={16} color={colors.onPrimary} />
+              <Ionicons name="add" size={20} color={colors.onPrimary} />
+              <Text style={styles.emptyBtnText}>Thêm món đồ</Text>
             </Pressable>
           </View>
-        </View>
-
-        {/* Alternative Section */}
-        <View style={styles.altSection}>
-          <Text style={styles.altSectionTitle}>Hay thử một cảm giác khác?</Text>
-
-          {/* Alt Card 1 */}
-          <Pressable
-            style={styles.altCard}
-            onPress={() => router.push('/outfit-detail')}
-          >
-            <View style={styles.altThumbs}>
-              {shirtItem && (
-                <Image source={shirtItem.image} style={styles.altThumbImg} resizeMode="cover" />
-              )}
-              <View style={styles.altThumbsSub}>
-                {kakiItem && (
-                  <Image source={kakiItem.image} style={styles.altThumbSmall} resizeMode="cover" />
-                )}
-                {sneakerItem && (
-                  <Image source={sneakerItem.image} style={styles.altThumbSmall} resizeMode="cover" />
-                )}
-              </View>
-            </View>
-
-            <View style={styles.altInfo}>
-              <Text style={styles.altTitle}>Gọn gàng, sáng sủa</Text>
-              <Text style={styles.altSub}>Sơ mi + kaki + sneaker</Text>
-              <Text style={styles.altTag}>Trung tính · trắng, be hài hòa</Text>
-            </View>
-
-            <Ionicons name="chevron-forward" size={18} color={colors.textLight} />
-          </Pressable>
-
-          {/* Alt Card 2 */}
-          <Pressable
-            style={styles.altCard}
-            onPress={() => router.push('/outfit-detail')}
-          >
-            <View style={styles.altThumbs}>
-              {jacketItem && (
-                <Image source={jacketItem.image} style={styles.altThumbImg} resizeMode="cover" />
-              )}
-              <View style={styles.altThumbsSub}>
-                {jeansItem && (
-                  <Image source={jeansItem.image} style={styles.altThumbSmall} resizeMode="cover" />
-                )}
-                {sneakerItem && (
-                  <Image source={sneakerItem.image} style={styles.altThumbSmall} resizeMode="cover" />
-                )}
-              </View>
-            </View>
-
-            <View style={styles.altInfo}>
-              <Text style={styles.altTitle}>Thêm một lớp cá tính</Text>
-              <Text style={styles.altSub}>Áo khoác + jeans + sneaker</Text>
-              <Text style={styles.altTag}>Tương tự · ô liu và xanh denim</Text>
-            </View>
-
-            <Ionicons name="chevron-forward" size={18} color={colors.textLight} />
-          </Pressable>
-        </View>
+        )}
       </ScrollView>
     </SafeAreaView>
   );
@@ -260,10 +362,77 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
   },
+  badgeWrapper: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
   recTag: { fontSize: 11, fontWeight: '800', color: colors.primary, letterSpacing: 0.5 },
+  harmonyBadge: {
+    backgroundColor: '#E0F2FE',
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: radius.full,
+  },
+  harmonyBadgeText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#0369A1',
+  },
   paginationDots: { flexDirection: 'row', gap: 4 },
   dot: { width: 6, height: 6, borderRadius: 3, backgroundColor: '#CBD5E1' },
   dotActive: { backgroundColor: colors.primary, width: 14 },
+
+  // Loading & Empty
+  loadingBox: {
+    padding: spacing.xl,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.sm,
+  },
+  loadingText: {
+    fontSize: 13,
+    color: colors.primary,
+    fontWeight: '600',
+  },
+  emptyContainer: {
+    padding: spacing.xl,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.surfaceCard,
+    borderRadius: radius.lg,
+    borderWidth: 1,
+    borderColor: colors.border,
+    gap: spacing.sm,
+    marginTop: spacing.md,
+  },
+  emptyTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: colors.text,
+  },
+  emptyDesc: {
+    fontSize: 13,
+    color: colors.textMuted,
+    textAlign: 'center',
+    lineHeight: 18,
+    maxWidth: 280,
+  },
+  emptyBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: colors.primary,
+    paddingHorizontal: 18,
+    paddingVertical: 10,
+    borderRadius: radius.md,
+    marginTop: spacing.xs,
+  },
+  emptyBtnText: {
+    color: colors.onPrimary,
+    fontSize: 13,
+    fontWeight: '700',
+  },
 
   // Collage
   collageContainer: {
@@ -273,6 +442,18 @@ const styles = StyleSheet.create({
     marginTop: spacing.xs,
   },
   collageLeft: { flex: 1, gap: spacing.sm },
+  collageFull: {
+    width: '100%',
+    height: '100%',
+    borderRadius: radius.md,
+    backgroundColor: '#EAE6E1',
+  },
+  collageSingleLeft: {
+    width: '100%',
+    height: '100%',
+    borderRadius: radius.md,
+    backgroundColor: '#EAE6E1',
+  },
   collageTopLeft: {
     flex: 1,
     width: '100%',

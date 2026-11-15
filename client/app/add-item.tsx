@@ -15,17 +15,17 @@ import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors, radius, spacing } from '../src/constants/theme';
-import { SEED_ITEMS } from '../src/constants/seedData';
 import { ImageService } from '../src/services/ImageService';
 import { ProcessedColor } from '../src/api/endpoints';
 import { Category, Formality } from '../src/types/item';
 import { useWardrobeStore } from '../src/store/wardrobeStore';
 
-// 4 Danh mục chuẩn: Áo, Quần, Váy, Giày
+// 5 Danh mục chuẩn: Áo, Quần, Váy, Đầm, Giày
 const CATEGORIES: { id: Category; label: string; icon: any }[] = [
   { id: 'Áo', label: 'Áo', icon: 'shirt-outline' },
   { id: 'Quần', label: 'Quần', icon: 'file-tray-outline' },
   { id: 'Váy', label: 'Váy', icon: 'woman-outline' },
+  { id: 'Đầm', label: 'Đầm', icon: 'sparkles-outline' },
   { id: 'Giày', label: 'Giày', icon: 'footsteps-outline' },
 ];
 
@@ -58,14 +58,12 @@ export default function AddItemScreen() {
   const router = useRouter();
   const addItemToStore = useWardrobeStore((state) => state.addItem);
 
-  // 1. Quản lý ảnh & AI
-  const defaultItem = SEED_ITEMS.find((i) => i.id === '2');
+  // 1. Quản lý ảnh & AI (Bỏ mock data, chỉ dùng ảnh thật)
   const [currentImageUri, setCurrentImageUri] = useState<string | null>(null);
   const [isProcessingImage, setIsProcessingImage] = useState(false);
   const [isAiTransparent, setIsAiTransparent] = useState(false);
   const [aiDetectedColor, setAiDetectedColor] = useState<ProcessedColor | null>(null);
   const [selectedColorId, setSelectedColorId] = useState<string>('white');
-
 
   // Màu sắc hiện thời đang chọn: Đồng nhất 100% trên toàn bộ giao diện và cơ sở dữ liệu
   const activeColor = useMemo(() => {
@@ -73,7 +71,7 @@ export default function AddItemScreen() {
   }, [selectedColorId]);
 
   // 2. Thuộc tính trang phục (DoD)
-  const [itemName, setItemName] = useState<string>('Sơ mi trắng');
+  const [itemName, setItemName] = useState<string>('');
   const [category, setCategory] = useState<Category>('Áo');
   const [formality, setFormality] = useState<Formality>(3); // Mặc định 3: Lịch sự vừa
   const [selectedContexts, setSelectedContexts] = useState<string[]>(['Đi học', 'Đi làm']);
@@ -228,22 +226,15 @@ export default function AddItemScreen() {
   };
 
   /**
-   * Chọn mẫu cơ bản có sẵn
-   */
-  const handlePresetPick = () => {
-    setCurrentImageUri(null);
-    setIsAiTransparent(true);
-    setAiDetectedColor(null);
-    setSelectedColorId('white');
-    setCategory('Áo');
-    setItemName('Sơ mi trắng');
-  };
-
-  /**
    * Chạm cuối: Bấm "Lưu vào tủ đồ" thêm bản ghi vào SQLite và chuyển về tab Tủ đồ
    */
   const handleSaveToWardrobe = async () => {
     if (isSaving || isProcessingImage) return;
+
+    if (!currentImageUri) {
+      Alert.alert('Chưa chọn ảnh', 'Vui lòng chụp ảnh hoặc chọn ảnh trang phục từ thư viện!');
+      return;
+    }
 
     // Xác định màu sắc: Luôn ghi nhận 100% theo màu người dùng chọn trên giao diện
     const color_h = activeColor.h;
@@ -252,9 +243,7 @@ export default function AddItemScreen() {
     const color_hex = activeColor.hex;
     const color_name = activeColor.name;
 
-    // Đường dẫn ảnh: ưu tiên ảnh chụp/chọn, nếu không dùng ảnh mẫu
-    const defaultUri = defaultItem ? Image.resolveAssetSource(defaultItem.image)?.uri || '' : '';
-    const imagePath = currentImageUri || defaultUri;
+    const imagePath = currentImageUri;
 
     setIsSaving(true);
     try {
@@ -319,15 +308,6 @@ export default function AddItemScreen() {
               <Ionicons name="images-outline" size={22} color={colors.primary} />
               <Text style={styles.methodBtnText}>Thư viện</Text>
             </Pressable>
-
-            <Pressable
-              style={styles.methodBtn}
-              onPress={handlePresetPick}
-              disabled={isProcessingImage}
-            >
-              <Ionicons name="layers-outline" size={22} color={colors.textMuted} />
-              <Text style={[styles.methodBtnText, { color: colors.textMuted }]}>Mẫu cơ bản</Text>
-            </Pressable>
           </View>
         </View>
 
@@ -345,9 +325,12 @@ export default function AddItemScreen() {
                 style={styles.previewImg}
                 resizeMode="contain"
               />
-            ) : defaultItem ? (
-              <Image source={defaultItem.image} style={styles.previewImg} resizeMode="contain" />
-            ) : null}
+            ) : (
+              <Pressable style={styles.emptyImageBox} onPress={handleGalleryPick}>
+                <Ionicons name="cloud-upload-outline" size={32} color={colors.primary} />
+                <Text style={styles.emptyImageText}>Chạm để tải ảnh</Text>
+              </Pressable>
+            )}
 
             {isAiTransparent && !isProcessingImage && (
               <View style={styles.aiBadge}>
@@ -366,7 +349,7 @@ export default function AddItemScreen() {
               placeholderTextColor={colors.textLight}
             />
             <Text style={styles.previewSub}>
-              {currentImageUri ? 'Ảnh chụp/tải lên' : 'Mẫu cơ bản'} · {category}
+              {currentImageUri ? 'Ảnh chụp/tải lên' : 'Chưa chọn ảnh'} · {category}
             </Text>
 
             {/* Huy hiệu màu sắc: Đồng bộ 100% theo activeColor người dùng hoặc AI chọn */}
@@ -622,6 +605,8 @@ const styles = StyleSheet.create({
   },
   loadingBox: { alignItems: 'center', justifyContent: 'center' },
   loadingText: { fontSize: 9, color: colors.primary, fontWeight: '700', marginTop: 4 },
+  emptyImageBox: { alignItems: 'center', justifyContent: 'center', padding: 8 },
+  emptyImageText: { fontSize: 10, color: colors.primary, fontWeight: '700', marginTop: 4, textAlign: 'center' },
   previewImg: { width: 90, height: 90 },
   aiBadge: {
     position: 'absolute',
