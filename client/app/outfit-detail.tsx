@@ -1,4 +1,5 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState, useRef } from 'react';
+import { HistoryService } from '../src/services/HistoryService';
 import {
   Image,
   Pressable,
@@ -181,8 +182,22 @@ export default function OutfitDetailScreen() {
   };
 
   // 7. Xác nhận mặc -> lưu lịch sử
-  const handleConfirmWear = () => {
-    router.replace('/(tabs)/history');
+  const savingRef = useRef(false);
+  const [saving, setSaving] = useState(false);
+  const handleConfirmWear = async () => {
+    if (savingRef.current) return;
+    savingRef.current = true;
+    setSaving(true);
+    try {
+      await HistoryService.confirmWear(currentItems.map((item) => item.id), currentContext);
+      await useWardrobeStore.getState().loadItems();
+      router.replace('/(tabs)/history');
+    } catch (error) {
+      setSwapMessage(error instanceof Error ? error.message : 'Không thể lưu bộ đồ. Hãy thử lại.');
+    } finally {
+      savingRef.current = false;
+      setSaving(false);
+    }
   };
 
   return (
@@ -352,8 +367,8 @@ export default function OutfitDetailScreen() {
         <Text style={styles.confirmDisclaimer}>
           Xác nhận để lưu bộ đồ vào lịch sử hôm nay.
         </Text>
-        <Pressable style={styles.confirmBtn} onPress={handleConfirmWear}>
-          <Text style={styles.confirmBtnText}>Xác nhận mặc</Text>
+        <Pressable style={[styles.confirmBtn, (saving || !currentItems.length) && { opacity: 0.5 }]} disabled={saving || !currentItems.length} onPress={handleConfirmWear}>
+          <Text style={styles.confirmBtnText}>{saving ? 'Đang lưu...' : 'Xác nhận mặc'}</Text>
           <Ionicons name="checkmark" size={18} color={colors.onPrimary} />
         </Pressable>
       </View>
