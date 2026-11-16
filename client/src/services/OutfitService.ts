@@ -1,3 +1,4 @@
+import { HistoryService, wearSignature } from './HistoryService';
 import { outfitApi, SuggestedOutfitDTO } from '../api/endpoints';
 import { WardrobeItem } from '../types/item';
 import { WeatherData } from './WeatherService';
@@ -39,6 +40,9 @@ export class OutfitService {
     if (!items || items.length === 0) {
       return [];
     }
+
+    const excluded = await HistoryService.yesterdaySignatures();
+    const allowed = (outfit: { items: { id: string | number }[] }) => !excluded.has(wearSignature(outfit.items.map((item) => item.id)));
 
     try {
       // 1. Chuẩn bị payload gửi lên Backend
@@ -92,7 +96,7 @@ export class OutfitService {
             colorHex: it.color_hex,
             image: { uri: it.image_path },
           })),
-        }));
+        })).filter(allowed);
       }
     } catch (apiError) {
       console.warn('[OutfitService] Lỗi gọi Backend gợi ý, kích hoạt Local-First fallback:', apiError);
@@ -119,7 +123,7 @@ export class OutfitService {
         image: it.image,
       })),
       score: s.score,
-    }));
+    })).filter(allowed);
   }
 }
 

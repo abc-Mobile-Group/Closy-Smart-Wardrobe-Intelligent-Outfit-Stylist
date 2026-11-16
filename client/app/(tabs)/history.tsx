@@ -1,8 +1,8 @@
-import React, { useState } from 'react';
+import React, { useState, useCallback } from 'react';
+import { useFocusEffect } from 'expo-router';
+import { HistoryService, WearRecord, localDay } from '../../src/services/HistoryService';
 import {
-  Alert,
   Image,
-  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -13,21 +13,41 @@ import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors, radius, spacing } from '../../src/constants/theme';
 import { useAuthStore } from '../../src/store/authStore';
-import { useWardrobeStore } from '../../src/store/wardrobeStore';
 
 const DAYS_OF_WEEK = ['T2', 'T3', 'T4', 'T5', 'T6', 'T7', 'CN'];
-const WORN_DAYS = [1, 6, 9, 12, 15, 17, 19];
+
 
 export default function HistoryScreen() {
   const { email, name, openProfile } = useAuthStore();
-  const { items } = useWardrobeStore();
-  const [showBanner, setShowBanner] = useState(true);
-  const [selectedDay, setSelectedDay] = useState(19);
+  const [selectedDay, setSelectedDay] = useState(new Date().getDate());
+  const [month, setMonth] = useState(() => new Date(new Date().getFullYear(), new Date().getMonth(), 1));
+  const [records, setRecords] = useState<WearRecord[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  useFocusEffect(useCallback(() => {
+    let active = true;
+    setLoading(true);
+    setError('');
+    HistoryService.listMonth(month.getFullYear(), month.getMonth()).then((rows) => {
+      if (active) setRecords(rows);
+    }).catch(() => { if (active) setError('Không thể tải lịch sử. Hãy mở lại tab để thử lại.'); })
+      .finally(() => { if (active) setLoading(false); });
+    return () => { active = false; };
+  }, [month]));
+  const changeMonth = (delta: number) => {
+    setMonth(new Date(month.getFullYear(), month.getMonth() + delta, 1));
+    setSelectedDay(1);
+    setRecords([]);
+  };
+  const selectedDate = localDay(new Date(month.getFullYear(), month.getMonth(), selectedDay));
+  const selectedRecords = records.filter((record) => record.worn_day === selectedDate);
+  const daysInMonth = new Date(month.getFullYear(), month.getMonth() + 1, 0).getDate();
+  const offset = (month.getDay() + 6) % 7;
 
   const displayName = name || (email ? email.split('@')[0] : 'An');
   const initial = displayName.charAt(0).toUpperCase();
 
-  const userItems = items.slice(0, 3);
+
 
   return (
     <SafeAreaView style={styles.safeArea} edges={['top']}>
@@ -47,31 +67,15 @@ export default function HistoryScreen() {
           </Pressable>
         </View>
 
-        {/* Success Alert Banner */}
-        {showBanner && (
-          <View style={styles.alertBanner}>
-            <View style={styles.alertIconBg}>
-              <Ionicons name="checkmark" size={16} color={colors.onPrimary} />
-            </View>
-            <View style={styles.alertTextGroup}>
-              <Text style={styles.alertTitle}>Đã lưu bộ đồ hôm nay</Text>
-              <Text style={styles.alertSubtitle}>Chúc bạn một ngày đến lớp thật vui!</Text>
-            </View>
-            <Pressable onPress={() => setShowBanner(false)} hitSlop={8}>
-              <Ionicons name="close" size={16} color={colors.textLight} />
-            </Pressable>
-          </View>
-        )}
-
         {/* Calendar Widget */}
         <View style={styles.calendarCard}>
           {/* Calendar Header */}
           <View style={styles.calendarHeader}>
-            <Pressable hitSlop={8}>
+            <Pressable hitSlop={8} onPress={() => changeMonth(-1)}>
               <Ionicons name="chevron-back" size={18} color={colors.textMuted} />
             </Pressable>
-            <Text style={styles.calendarMonth}>Tháng 10, 2026</Text>
-            <Pressable hitSlop={8}>
+            <Text style={styles.calendarMonth}>{month.getMonth() + 1} / {month.getFullYear()}</Text>
+            <Pressable hitSlop={8} onPress={() => changeMonth(1)}>
               <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
             </Pressable>
           </View>
@@ -88,13 +92,11 @@ export default function HistoryScreen() {
           {/* Month Grid */}
           <View style={styles.daysGrid}>
             {/* Empty slots for start of month (Tháng 10/2026 bắt đầu từ Thứ Năm: T2, T3, T4 trống) */}
-            <View style={styles.dayCellWrapper} />
-            <View style={styles.dayCellWrapper} />
-            <View style={styles.dayCellWrapper} />
+            {Array.from({ length: offset }, (_, index) => <View key={`blank-${index}`} style={styles.dayCellWrapper} />)}
 
-            {Array.from({ length: 31 }, (_, i) => i + 1).map((day) => {
+            {Array.from({ length: daysInMonth }, (_, i) => i + 1).map((day) => {
               const isSelected = selectedDay === day;
-              const hasWorn = WORN_DAYS.includes(day);
+              const hasWorn = records.some((record) => record.worn_day === localDay(new Date(month.getFullYear(), month.getMonth(), day)));
 
               return (
                 <View key={day} style={styles.dayCellWrapper}>
@@ -105,7 +107,7 @@ export default function HistoryScreen() {
                     <Text style={[styles.dayText, isSelected && styles.dayTextSelected]}>
                       {day}
                     </Text>
-                    {hasWorn && !isSelected && <View style={styles.wornDot} />}
+                    {hasWorn && <View style={[styles.wornDot, isSelected && { backgroundColor: colors.onPrimary }]} />}
                   </Pressable>
                 </View>
               );
@@ -121,13 +123,14 @@ export default function HistoryScreen() {
 
         {/* Outfit for Selected Day */}
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Hôm nay, {selectedDay} tháng 10</Text>
+          <Text style={styles.sectionTitle}>{selectedDay}/{month.getMonth() + 1}/{month.getFullYear()}</Text>
 
-          {userItems.length > 0 ? (
-            <View style={styles.todayOutfitCard}>
+          {loading ? <Text>Đang tải lịch sử...</Text> : error ? <Text>{error}</Text> : selectedRecords.length > 0 ? selectedRecords.map((record) => (
+
+            <View key={record.id} style={styles.todayOutfitCard}>
               {/* items horizontal */}
               <View style={styles.outfitRow}>
-                {userItems.map((it) => (
+                {record.items.map((it) => (
                   <Image
                     key={it.id}
                     source={{ uri: it.image_path }}
@@ -140,7 +143,7 @@ export default function HistoryScreen() {
               {/* Meta */}
               <View style={styles.outfitCardFooter}>
                 <View>
-                  <Text style={styles.outfitCardTitle}>{userItems[0].name}</Text>
+                  <Text style={styles.outfitCardTitle}>{record.context}</Text>
                   <Text style={styles.outfitCardDesc}>Bộ đồ từ tủ đồ cá nhân của bạn</Text>
                 </View>
                 <View style={styles.wornBadge}>
@@ -149,7 +152,7 @@ export default function HistoryScreen() {
                 </View>
               </View>
             </View>
-          ) : (
+          )) : (
             <View style={styles.emptyHistoryBox}>
               <Ionicons name="calendar-outline" size={32} color={colors.primary} />
               <Text style={styles.emptyHistoryText}>Chưa có lịch sử mặc đồ</Text>

@@ -22,6 +22,16 @@ const MIGRATIONS: string[] = [
   `ALTER TABLE items ADD COLUMN name TEXT;
    ALTER TABLE items ADD COLUMN color_name TEXT;
    ALTER TABLE items ADD COLUMN color_hex TEXT;`,
+  `CREATE TABLE outfits (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    worn_at TEXT NOT NULL,
+    worn_day TEXT NOT NULL,
+    signature TEXT NOT NULL,
+    context TEXT NOT NULL,
+    items_json TEXT NOT NULL,
+    UNIQUE(worn_day, signature)
+  );
+  CREATE INDEX idx_outfits_day ON outfits(worn_day);`,
 ];
 
 export async function migrate(db: SQLiteDatabase): Promise<void> {
