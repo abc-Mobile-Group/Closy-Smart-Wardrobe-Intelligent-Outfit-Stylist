@@ -1,0 +1,41 @@
+services:
+  web:
+    build:
+      context: ../client
+      dockerfile: Dockerfile
+      args:
+        EXPO_PUBLIC_API_URL: http://localhost:8000
+    ports:
+      - "8081:80"             # Mở giao diện Web tại: http://localhost:8081
+    depends_on:
+      - api
+    restart: unless-stopped
+
+  api:
+    build: .
+    env_file: .env
+    environment:
+      - DB_PATH=/data/closy.db
+      - REMBG_HOME=/models
+      - OLLAMA_HOST=http://host.docker.internal:11434
+      - OLLAMA_MODEL=gemma4:e4b
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    ports:
+      - "8000:8000"          # API Backend: http://localhost:8000/health
+    volumes:
+      - closy_data:/data
+      - ./.models:/models:ro
+      - ./main.py:/app/main.py
+      - ./color_extractor.py:/app/color_extractor.py
+    restart: unless-stopped
+
+  tunnel:
+    image: cloudflare/cloudflared:latest
+    command: tunnel --no-autoupdate --url http://api:8000
+    depends_on:
+      - api
+    restart: unless-stopped
+
+volumes:
+  closy_data:
