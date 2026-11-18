@@ -1,13 +1,29 @@
 import { getDb } from '../db/database';
+import { StorageService } from '../services/StorageService';
 import { CreateItemDTO, WardrobeItem } from '../types/item';
 
 export class ItemRepository {
   /**
-   * Thêm một món đồ mới vào SQLite
+   * Chuẩn hóa bản ghi từ SQLite:
+   * - SQLite lưu đường dẫn tương đối (relative path: closy_wardrobe/<uuid>.<ext>)
+   * - Khi đọc lên ứng dụng, resolve sang file:// URI đầy đủ để <Image /> hiển thị an toàn
+   */
+  private static hydrateItem(row: WardrobeItem): WardrobeItem {
+    const relativePath = StorageService.toRelativePath(row.image_path);
+    return {
+      ...row,
+      relative_image_path: relativePath,
+      image_path: StorageService.resolveImageUri(row.image_path),
+    };
+  }
+
+  /**
+   * Thêm một món đồ mới vào SQLite (lưu đường dẫn tương đối cho image_path)
    */
   static async create(dto: CreateItemDTO): Promise<WardrobeItem> {
     const db = await getDb();
     const contextsStr = dto.contexts.join(',');
+    const relativeImagePath = StorageService.toRelativePath(dto.image_path);
 
     const result = await db.runAsync(
       `INSERT INTO items (
@@ -16,7 +32,8 @@ export class ItemRepository {
       [
         dto.name,
         dto.category,
-        dto.image_path,
+        // [Code cũ]: dto.image_path,
+        relativeImagePath,
         dto.color_h,
         dto.color_s,
         dto.color_l,
@@ -44,7 +61,8 @@ export class ItemRepository {
       'SELECT * FROM items WHERE id = ?',
       [id],
     );
-    return row || null;
+    // [Code cũ]: return row || null;
+    return row ? this.hydrateItem(row) : null;
   }
 
   /**
@@ -55,11 +73,12 @@ export class ItemRepository {
     const rows = await db.getAllAsync<WardrobeItem>(
       'SELECT * FROM items ORDER BY id DESC',
     );
-    return rows || [];
+    // [Code cũ]: return rows || [];
+    return (rows || []).map((row) => this.hydrateItem(row));
   }
 
   /**
-   * Lấy danh sách món đồ theo danh mục (Áo, Quần, Váy, Giày)
+   * Lấy danh sách món đồ theo danh mục (Áo, Quần, Váy, Đầm, Giày)
    */
   static async getByCategory(category: string): Promise<WardrobeItem[]> {
     const db = await getDb();
@@ -70,11 +89,12 @@ export class ItemRepository {
       'SELECT * FROM items WHERE category = ? ORDER BY id DESC',
       [category],
     );
-    return rows || [];
+    // [Code cũ]: return rows || [];
+    return (rows || []).map((row) => this.hydrateItem(row));
   }
 
   /**
-   * Xóa một món đồ khỏi tủ đồ
+   * Xóa một món đồ khỏi SQLite
    */
   static async delete(id: number): Promise<void> {
     const db = await getDb();
@@ -124,4 +144,3 @@ export class ItemRepository {
     return row?.count || 0;
   }
 }
-

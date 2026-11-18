@@ -1,12 +1,14 @@
-import * as FileSystem from 'expo-file-system/legacy';
-import { Platform } from 'react-native';
+// [Code cũ - đã chuyển logic sang StorageService]
+// import * as FileSystem from 'expo-file-system/legacy';
+// import { Platform } from 'react-native';
+
+import { StorageService } from '../services/StorageService';
 
 export class FileRepository {
+  /* [Code cũ]
   private static WARDROBE_DIR = (FileSystem.documentDirectory || '') + 'wardrobe/';
 
-  /**
-   * Đảm bảo thư mục lưu trữ ảnh tủ đồ tồn tại
-   */
+  // Đảm bảo thư mục lưu trữ ảnh tủ đồ tồn tại
   private static async ensureDirExists() {
     if (Platform.OS === 'web' || !FileSystem.documentDirectory) return;
     try {
@@ -18,12 +20,16 @@ export class FileRepository {
       console.warn('Lỗi kiểm tra/tạo thư mục wardrobe:', e);
     }
   }
+  */
 
   /**
-   * Lưu ảnh trang phục vào bộ nhớ ứng dụng vĩnh viễn (documentDirectory).
-   * Hỗ trợ cả Base64 Data URL (từ AI tách nền) và File URI cục bộ.
+   * Lưu ảnh trang phục vào bộ nhớ ứng dụng vĩnh viễn (documentDirectory/closy_wardrobe/).
+   * Tạo tên tệp UUID ngẫu nhiên và trả về đường dẫn tương đối (relative path) để lưu SQLite.
    */
   static async saveItemImage(sourceUri: string): Promise<string> {
+    return StorageService.saveImage(sourceUri);
+
+    /* [Code cũ]
     if (Platform.OS === 'web' || !FileSystem.documentDirectory) {
       return sourceUri;
     }
@@ -62,5 +68,27 @@ export class FileRepository {
       console.warn('Lỗi khi lưu ảnh vào FileSystem, giữ nguyên URI ban đầu:', e);
       return sourceUri;
     }
+    */
+  }
+
+  /**
+   * Xóa tệp ảnh trên máy khi người dùng xóa món đồ khỏi tủ
+   */
+  static async deleteItemImage(pathOrUri: string): Promise<boolean> {
+    return StorageService.deleteImage(pathOrUri);
+  }
+
+  /**
+   * Chuyển đổi đường dẫn tương đối trong SQLite sang URI hiển thị được trên <Image />
+   */
+  static resolveImageUri(relativeOrUri: string): string {
+    return StorageService.resolveImageUri(relativeOrUri);
+  }
+
+  /**
+   * Chuẩn hóa URI về đường dẫn tương đối để lưu trong SQLite
+   */
+  static toRelativePath(pathOrUri: string): string {
+    return StorageService.toRelativePath(pathOrUri);
   }
 }

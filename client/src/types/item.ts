@@ -9,6 +9,7 @@ export interface WardrobeItem {
   name: string;
   category: Category;
   image_path: string;
+  relative_image_path?: string;
   color_h: number;     // 0-360
   color_s: number;     // 0-100
   color_l: number;     // 0-100

@@ -1,19 +1,29 @@
 import { FileRepository } from '../repositories/FileRepository';
 import { ItemRepository } from '../repositories/ItemRepository';
+import { StorageService } from './StorageService';
 import { CreateItemDTO, WardrobeItem } from '../types/item';
 
 export class WardrobeService {
   /**
-   * Thêm món đồ vào tủ đồ: Lưu tệp ảnh vào bộ nhớ lâu dài và ghi vào SQLite
+   * Thêm món đồ vào tủ đồ:
+   * 1. Lưu tệp ảnh vào documentDirectory/closy_wardrobe/ với tên UUID ngẫu nhiên
+   * 2. Lưu đường dẫn tương đối (relative path) vào SQLite
    */
   static async addItem(dto: CreateItemDTO): Promise<WardrobeItem> {
-    // 1. Lưu ảnh vào bộ nhớ vĩnh viễn
-    const permanentImagePath = await FileRepository.saveItemImage(dto.image_path);
+    // [Code cũ]:
+    // const permanentImagePath = await FileRepository.saveItemImage(dto.image_path);
+    // const item = await ItemRepository.create({
+    //   ...dto,
+    //   image_path: permanentImagePath,
+    // });
 
-    // 2. Lưu thông tin vào SQLite
+    // 1. Lưu ảnh vào closy_wardrobe/ và nhận lại relative path ("closy_wardrobe/<uuid>.<ext>")
+    const relativeImagePath = await FileRepository.saveItemImage(dto.image_path);
+
+    // 2. Lưu thông tin (kèm relative path) vào SQLite
     const item = await ItemRepository.create({
       ...dto,
-      image_path: permanentImagePath,
+      image_path: relativeImagePath,
     });
 
     return item;
@@ -51,10 +61,20 @@ export class WardrobeService {
   }
 
   /**
-   * Xóa món đồ
+   * Xóa món đồ khỏi tủ đồ:
+   * - Xóa bản ghi trong SQLite
+   * - Xóa tệp ảnh vật lý tương ứng trong documentDirectory/closy_wardrobe/ trên máy
    */
   static async deleteItem(id: number): Promise<void> {
-    return ItemRepository.delete(id);
+    // [Code cũ]: return ItemRepository.delete(id);
+
+    const existingItem = await ItemRepository.getById(id);
+    await ItemRepository.delete(id);
+
+    if (existingItem) {
+      const targetPath = existingItem.relative_image_path || existingItem.image_path;
+      await StorageService.deleteImage(targetPath);
+    }
   }
 
   /**
@@ -64,4 +84,3 @@ export class WardrobeService {
     return ItemRepository.count();
   }
 }
-
