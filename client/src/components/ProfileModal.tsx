@@ -1,10 +1,12 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
   Modal,
   Platform,
   Pressable,
+  ScrollView,
   StyleSheet,
+  Switch,
   Text,
   TextInput,
   View,
@@ -12,6 +14,10 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { colors, radius, spacing } from '../constants/theme';
 import { useAuthStore } from '../store/authStore';
+import {
+  MorningNotificationSettings,
+  NotificationService,
+} from '../services/NotificationService';
 
 type ProfileModalProps = {
   visible: boolean;
@@ -24,6 +30,85 @@ export default function ProfileModal({ visible, onClose }: ProfileModalProps) {
   const [newName, setNewName] = useState(name || '');
   const [saving, setSaving] = useState(false);
   const [confirmSignOut, setConfirmSignOut] = useState(false);
+
+  // Issue #27: Cài đặt thông báo cục bộ gợi ý đồ sáng sớm
+  const [notifSettings, setNotifSettings] = useState<MorningNotificationSettings>(
+    NotificationService.DEFAULT_SETTINGS,
+  );
+  const [notifBusy, setNotifBusy] = useState(false);
+  const [notifFeedback, setNotifFeedback] = useState<string | null>(null);
+  const [showPermissionPrompt, setShowPermissionPrompt] = useState(false);
+
+  useEffect(() => {
+    if (!visible) return;
+    let active = true;
+    setNotifFeedback(null);
+    setShowPermissionPrompt(false);
+    NotificationService.getSettings().then((saved) => {
+      if (active) setNotifSettings(saved);
+    });
+    return () => {
+      active = false;
+    };
+  }, [visible]);
+
+  const applyEnableReminder = async (hour: number, minute: number) => {
+    setNotifBusy(true);
+    setNotifFeedback(null);
+    setShowPermissionPrompt(false);
+    const res = await NotificationService.scheduleMorningReminder(hour, minute);
+    setNotifSettings(res.settings);
+    if (res.success) {
+      setNotifFeedback(
+        res.reason ||
+          `Đã đặt lịch nhắc mỗi sáng lúc ${NotificationService.formatTime(hour, minute)}.`,
+      );
+    } else {
+      setNotifFeedback(res.reason || 'Không thể bật thông báo nhắc nhở.');
+    }
+    setNotifBusy(false);
+  };
+
+  const handleToggleNotification = async (nextValue: boolean) => {
+    if (notifBusy) return;
+    if (!nextValue) {
+      setNotifBusy(true);
+      setShowPermissionPrompt(false);
+      const updated = await NotificationService.disableMorningReminder();
+      setNotifSettings(updated);
+      setNotifFeedback('Đã tắt thông báo gợi ý đồ buổi sáng.');
+      setNotifBusy(false);
+      return;
+    }
+
+    // Contextual permission: kiểm tra quyền trước khi bật system dialog
+    const permStatus = await NotificationService.getPermissionStatus();
+    if (permStatus === 'granted' || permStatus === 'unsupported') {
+      await applyEnableReminder(notifSettings.hour, notifSettings.minute);
+    } else {
+      setNotifFeedback(null);
+      setShowPermissionPrompt(true);
+    }
+  };
+
+  const handleSelectTimePreset = async (hour: number, minute: number) => {
+    if (notifBusy) return;
+    const nextSettings: MorningNotificationSettings = {
+      ...notifSettings,
+      hour,
+      minute,
+    };
+    setNotifSettings(nextSettings);
+
+    if (notifSettings.enabled) {
+      await applyEnableReminder(hour, minute);
+    } else {
+      await NotificationService.saveSettings(nextSettings);
+      setNotifFeedback(
+        `Đã chọn khung giờ ${NotificationService.formatTime(hour, minute)}. Bật công tắc để nhận nhắc nhở hàng ngày.`,
+      );
+    }
+  };
 
   const displayName = name || (email ? email.split('@')[0] : 'Bạn mới');
   const initial = displayName.charAt(0).toUpperCase();
@@ -65,6 +150,11 @@ export default function ProfileModal({ visible, onClose }: ProfileModalProps) {
               <Ionicons name="close" size={20} color={colors.textMuted} />
             </Pressable>
           </View>
+
+          <ScrollView
+            showsVerticalScrollIndicator={false}
+            contentContainerStyle={styles.scrollContent}
+          >
 
           {/* Profile Overview */}
           <View style={styles.profileSection}>
@@ -152,6 +242,81 @@ export default function ProfileModal({ visible, onClose }: ProfileModalProps) {
             </View>
           </View>
 
+          {/* Issue #27: Cài đặt Thông báo cục bộ gợi ý đồ sáng sớm */}
+          <View style={styles.notifCard}>
+            <View style={styles.notifHeaderRow}>
+              <View style={styles.notifTitleGroup}>
+                <Ionicons name="notifications-outline" size={17} color={colors.primary} />
+                <View style={styles.notifTextCol}>
+                  <Text style={styles.notifTitle}>Nhắc phối đồ buổi sáng</Text>
+                  <Text style={styles.notifSubtitle}>
+                    Mỗi ngày lúc {NotificationService.formatTime(notifSettings.hour, notifSettings.minute)}
+                  </Text>
+                </View>
+              </View>
+              <Switch
+                value={notifSettings.enabled}
+                onValueChange={handleToggleNotification}
+                disabled={notifBusy}
+                trackColor={{ false: colors.border, true: '#BAE6FD' }}
+                thumbColor={notifSettings.enabled ? colors.primary : '#FFFFFF'}
+              />
+            </View>
+
+            {/* Contextual Permission Prompt */}
+            {showPermissionPrompt && (
+              <View style={styles.permissionBox}>
+                <Text style={styles.permissionText}>
+                  Closy sẽ gửi 1 thông báo nhẹ lúc{' '}
+                  {NotificationService.formatTime(notifSettings.hour, notifSettings.minute)} mỗi sáng hỏi
+                  &ldquo;Hôm nay bạn đi đâu?&rdquo; để bạn mở app phối đồ ngay. Cho phép nhận thông báo nhé?
+                </Text>
+                <View style={styles.permissionActions}>
+                  <Pressable
+                    style={styles.permissionDeclineBtn}
+                    onPress={() => setShowPermissionPrompt(false)}
+                  >
+                    <Text style={styles.permissionDeclineText}>Để sau</Text>
+                  </Pressable>
+                  <Pressable
+                    style={styles.permissionAllowBtn}
+                    onPress={() => applyEnableReminder(notifSettings.hour, notifSettings.minute)}
+                    disabled={notifBusy}
+                  >
+                    <Text style={styles.permissionAllowText}>Cho phép</Text>
+                  </Pressable>
+                </View>
+              </View>
+            )}
+
+            {/* Chọn khung giờ nhắc nhở: 07:00, 07:30, 08:00 */}
+            <View style={styles.timePresetRow}>
+              <Text style={styles.timePresetLabel}>Khung giờ:</Text>
+              <View style={styles.timePresetChips}>
+                {NotificationService.TIME_PRESETS.map((preset) => {
+                  const active =
+                    notifSettings.hour === preset.hour && notifSettings.minute === preset.minute;
+                  return (
+                    <Pressable
+                      key={preset.id}
+                      style={[styles.timeChip, active && styles.timeChipActive]}
+                      onPress={() => handleSelectTimePreset(preset.hour, preset.minute)}
+                      disabled={notifBusy}
+                    >
+                      <Text style={[styles.timeChipText, active && styles.timeChipTextActive]}>
+                        {preset.label}
+                      </Text>
+                    </Pressable>
+                  );
+                })}
+              </View>
+            </View>
+
+            {!!notifFeedback && (
+              <Text style={styles.notifFeedbackText}>{notifFeedback}</Text>
+            )}
+          </View>
+
           {/* Logout Section */}
           <View style={styles.footerSection}>
             {confirmSignOut ? (
@@ -182,6 +347,7 @@ export default function ProfileModal({ visible, onClose }: ProfileModalProps) {
               </Pressable>
             )}
           </View>
+          </ScrollView>
         </View>
       </View>
     </Modal>
@@ -202,6 +368,7 @@ const styles = StyleSheet.create({
   card: {
     width: '100%',
     maxWidth: 380,
+    maxHeight: '90%',
     backgroundColor: '#FFFFFF',
     borderRadius: radius.xl,
     padding: spacing.lg,
@@ -214,6 +381,9 @@ const styles = StyleSheet.create({
         elevation: 8,
       },
     }),
+  },
+  scrollContent: {
+    gap: spacing.md,
   },
   header: {
     flexDirection: 'row',
@@ -371,6 +541,121 @@ const styles = StyleSheet.create({
   divider: {
     height: 1,
     backgroundColor: colors.border,
+  },
+  // Issue #27: Morning Local Notification settings
+  notifCard: {
+    backgroundColor: colors.surfaceCard,
+    borderRadius: radius.lg,
+    padding: spacing.md,
+    gap: spacing.sm,
+  },
+  notifHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    gap: spacing.sm,
+  },
+  notifTitleGroup: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    flex: 1,
+  },
+  notifTextCol: {
+    flex: 1,
+  },
+  notifTitle: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: colors.text,
+  },
+  notifSubtitle: {
+    fontSize: 11,
+    color: colors.textMuted,
+    marginTop: 1,
+  },
+  permissionBox: {
+    backgroundColor: '#F0F9FB',
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: '#BAE6FD',
+    padding: spacing.sm + 2,
+    gap: spacing.sm,
+  },
+  permissionText: {
+    fontSize: 11,
+    color: colors.text,
+    lineHeight: 16,
+  },
+  permissionActions: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    gap: spacing.xs + 2,
+  },
+  permissionDeclineBtn: {
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: radius.md,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  permissionDeclineText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: colors.textMuted,
+  },
+  permissionAllowBtn: {
+    paddingHorizontal: 12,
+    paddingVertical: 5,
+    borderRadius: radius.md,
+    backgroundColor: colors.primary,
+  },
+  permissionAllowText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#FFFFFF',
+  },
+  timePresetRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: spacing.xs,
+  },
+  timePresetLabel: {
+    fontSize: 12,
+    color: colors.textMuted,
+    fontWeight: '500',
+  },
+  timePresetChips: {
+    flexDirection: 'row',
+    gap: 6,
+  },
+  timeChip: {
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: radius.full,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  timeChipActive: {
+    backgroundColor: colors.primary,
+    borderColor: colors.primary,
+  },
+  timeChipText: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: colors.textMuted,
+  },
+  timeChipTextActive: {
+    color: '#FFFFFF',
+    fontWeight: '700',
+  },
+  notifFeedbackText: {
+    fontSize: 11,
+    color: colors.primary,
+    lineHeight: 15,
   },
   footerSection: {
     marginTop: spacing.xs,

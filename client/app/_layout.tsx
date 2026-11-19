@@ -7,6 +7,7 @@ import { getDb } from '../src/db/database';
 import { useAuthStore } from '../src/store/authStore';
 import { colors } from '../src/constants/theme';
 import ProfileModal from '../src/components/ProfileModal';
+import { NotificationService } from '../src/services/NotificationService';
 
 export default function RootLayout() {
   const { status, isProfileOpen, closeProfile } = useAuthStore();
@@ -33,6 +34,7 @@ export default function RootLayout() {
   // Khởi động: mở DB (chạy migration) rồi đọc phiên đăng nhập đã lưu.
   useEffect(() => {
     setUnauthorizedHandler(() => useAuthStore.getState().signOut());
+    NotificationService.configureNotificationHandler();
     (async () => {
       try {
         await getDb();
@@ -40,9 +42,18 @@ export default function RootLayout() {
         console.warn('Không mở được DB', e);
       }
       await useAuthStore.getState().init();
+      await NotificationService.syncScheduledReminderOnLaunch();
     })();
     return () => setUnauthorizedHandler(null);
   }, []);
+
+  // Issue #27: Xử lý sự kiện bấm vào thông báo cục bộ -> điều hướng thẳng vào tab Hôm nay (/(tabs)/today)
+  useEffect(() => {
+    if (status !== 'signedIn') return;
+    return NotificationService.subscribeToNotificationResponses(() => {
+      router.replace('/(tabs)/today');
+    });
+  }, [status, router]);
 
   // Điều hướng theo trạng thái đăng nhập.
   useEffect(() => {
