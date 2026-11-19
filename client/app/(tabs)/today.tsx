@@ -17,6 +17,7 @@ import { useAuthStore } from '../../src/store/authStore';
 import { useWardrobeStore } from '../../src/store/wardrobeStore';
 import { WeatherData, WeatherService } from '../../src/services/WeatherService';
 import { OutfitService, SuggestedOutfit } from '../../src/services/OutfitService';
+import { InsightService, WardrobeUtilizationStats } from '../../src/services/InsightService';
 
 const CONTEXTS = [
   { id: 'school', name: 'Đi học', icon: 'school-outline' },
@@ -37,6 +38,7 @@ export default function TodayScreen() {
   const [outfits, setOutfits] = useState<SuggestedOutfit[]>([]);
   const [activeOutfitIndex, setActiveOutfitIndex] = useState(0);
   const [isLoadingOutfits, setIsLoadingOutfits] = useState(false);
+  const [utilizationStats, setUtilizationStats] = useState<WardrobeUtilizationStats | null>(null);
 
   // Lấy thời tiết hiện tại khi vào màn hình
   const fetchWeather = async () => {
@@ -109,6 +111,7 @@ export default function TodayScreen() {
 
   const currentOutfit = outfits.length > 0 ? outfits[Math.min(activeOutfitIndex, outfits.length - 1)] : null;
 
+  /* [Code cũ - thay bằng InsightService (Issue #26)]
   // Mục "Lâu rồi chưa mặc nhỉ?": Chỉ lấy từ đồ thật của người dùng
   const reminderItem = useMemo(() => {
     if (items.length > 0) {
@@ -120,6 +123,48 @@ export default function TodayScreen() {
     }
     return null;
   }, [items]);
+  */
+
+  // Issue #26: Lọc món đồ ít dùng (wear_count == 0 hoặc > 30 ngày chưa mặc) & lấy món ngủ quên lâu nhất
+  const longestUnusedInsight = useMemo(() => {
+    return InsightService.getLongestUnusedItem(items);
+  }, [items]);
+
+  // Issue #26: Thống kê tỷ lệ tận dụng tủ đồ trong tuần / tháng
+  useEffect(() => {
+    let isMounted = true;
+    InsightService.getUtilizationStats(items)
+      .then((stats) => {
+        if (isMounted) setUtilizationStats(stats);
+      })
+      .catch((e) => {
+        console.warn('[TodayScreen] Lỗi tính thống kê tận dụng tủ đồ:', e);
+      });
+    return () => {
+      isMounted = false;
+    };
+  }, [items]);
+
+  const handleRemixUnusedItem = () => {
+    if (!longestUnusedInsight) return;
+    const remix = InsightService.buildRemixOutfit(
+      longestUnusedInsight.item,
+      items,
+      currentContext.name,
+    );
+    router.push({
+      pathname: '/outfit-detail',
+      params: {
+        context: remix.context,
+        title: remix.title,
+        subtitle: remix.subtitle,
+        type: remix.type,
+        harmonyBadge: remix.harmonyBadge,
+        itemsJson: JSON.stringify(remix.items),
+        itemIds: remix.items.map((i) => i.id).join(','),
+      },
+    });
+  };
 
   const displayName = name || (email ? email.split('@')[0] : 'An');
   const initial = displayName.charAt(0).toUpperCase();
@@ -450,7 +495,7 @@ export default function TodayScreen() {
           )}
         </View>
 
-        {/* Lâu rồi chưa mặc nhỉ? */}
+        {/* [Code cũ - thay bằng thẻ InsightService Issue #26]
         {reminderItem && (
           <Pressable
             style={styles.reminderCard}
@@ -465,6 +510,88 @@ export default function TodayScreen() {
             </View>
             <Ionicons name="arrow-up-outline" size={20} color={colors.primary} style={styles.arrowIcon} />
           </Pressable>
+        )}
+        */}
+
+        {/* Issue #26: Thẻ "Lâu rồi chưa mặc nhỉ?" hiển thị món đồ ngủ quên lâu nhất kèm nút "Thử phối lại hôm nay" */}
+        {longestUnusedInsight && (
+          <View style={styles.reminderCard}>
+            <View style={styles.reminderTopRow}>
+              <Image
+                source={{ uri: longestUnusedInsight.item.image_path }}
+                style={styles.reminderThumb}
+                resizeMode="cover"
+              />
+              <View style={styles.reminderInfo}>
+                <View style={styles.reminderHeaderRow}>
+                  <Text style={styles.reminderTitle}>Lâu rồi chưa mặc nhỉ?</Text>
+                  <View style={styles.unusedTag}>
+                    <Text style={styles.unusedTagText}>{longestUnusedInsight.reasonLabel}</Text>
+                  </View>
+                </View>
+                <Text style={styles.reminderDesc}>
+                  {longestUnusedInsight.item.name ||
+                    `${longestUnusedInsight.item.category} ${longestUnusedInsight.item.color_name || ''}`.trim()}{' '}
+                  đang ngủ quên trong tủ. Phối lại ngay để tối ưu tủ đồ của bạn nhé!
+                </Text>
+              </View>
+            </View>
+            <Pressable style={styles.remixBtn} onPress={handleRemixUnusedItem}>
+              <Ionicons name="sparkles-outline" size={15} color={colors.onPrimary} />
+              <Text style={styles.remixBtnText}>Thử phối lại hôm nay</Text>
+            </Pressable>
+          </View>
+        )}
+
+        {/* Issue #26: Thống kê tỷ lệ tận dụng tủ đồ trong tuần / tháng */}
+        {utilizationStats && utilizationStats.totalItems > 0 && (
+          <View style={styles.insightStatsCard}>
+            <View style={styles.insightStatsHeader}>
+              <View style={styles.insightStatsTitleGroup}>
+                <Ionicons name="pie-chart-outline" size={18} color={colors.primary} />
+                <Text style={styles.insightStatsTitle}>Tỷ lệ tận dụng tủ đồ</Text>
+              </View>
+              <Text style={styles.insightStatsSub}>
+                {utilizationStats.unusedCount}/{utilizationStats.totalItems} món ít dùng
+              </Text>
+            </View>
+
+            <View style={styles.statBarsGroup}>
+              <View style={styles.statRow}>
+                <View style={styles.statLabelRow}>
+                  <Text style={styles.statPeriodLabel}>Trong tuần (7 ngày qua)</Text>
+                  <Text style={styles.statValueText}>
+                    {utilizationStats.weeklyRate}% ({utilizationStats.weeklyWornCount}/{utilizationStats.totalItems} món)
+                  </Text>
+                </View>
+                <View style={styles.progressTrack}>
+                  <View
+                    style={[
+                      styles.progressFill,
+                      { width: `${Math.min(100, utilizationStats.weeklyRate)}%` },
+                    ]}
+                  />
+                </View>
+              </View>
+
+              <View style={styles.statRow}>
+                <View style={styles.statLabelRow}>
+                  <Text style={styles.statPeriodLabel}>Trong tháng (30 ngày qua)</Text>
+                  <Text style={styles.statValueText}>
+                    {utilizationStats.monthlyRate}% ({utilizationStats.monthlyWornCount}/{utilizationStats.totalItems} món)
+                  </Text>
+                </View>
+                <View style={styles.progressTrack}>
+                  <View
+                    style={[
+                      styles.progressFillMonthly,
+                      { width: `${Math.min(100, utilizationStats.monthlyRate)}%` },
+                    ]}
+                  />
+                </View>
+              </View>
+            </View>
+          </View>
         )}
       </ScrollView>
     </SafeAreaView>
@@ -782,26 +909,129 @@ const styles = StyleSheet.create({
     color: colors.primary,
   },
 
-  // Reminder Card
+  // Reminder Card (Issue #26: Lâu rồi chưa mặc nhỉ? + Thống kê tận dụng tủ đồ)
   reminderCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    // [Code cũ]: flexDirection: 'row', alignItems: 'center',
     backgroundColor: '#F0F9FB',
     borderRadius: radius.md,
-    padding: spacing.sm + 2,
+    padding: spacing.sm + 4,
     borderWidth: 1,
     borderColor: '#E2F2F5',
     gap: spacing.sm,
   },
+  reminderTopRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+  },
+  reminderHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    flexWrap: 'wrap',
+    gap: 6,
+  },
   reminderThumb: {
-    width: 52,
-    height: 52,
+    width: 56,
+    height: 56,
     borderRadius: radius.sm,
     backgroundColor: '#EAE6E1',
   },
   reminderInfo: { flex: 1 },
   reminderTitle: { fontSize: 13, fontWeight: '700', color: colors.text },
-  reminderDesc: { fontSize: 11, color: colors.textMuted, marginTop: 2, lineHeight: 16 },
+  unusedTag: {
+    backgroundColor: '#FEF3C7',
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    borderRadius: radius.full,
+  },
+  unusedTagText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#B45309',
+  },
+  reminderDesc: { fontSize: 11, color: colors.textMuted, marginTop: 3, lineHeight: 16 },
+  remixBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    backgroundColor: colors.primary,
+    paddingVertical: 10,
+    borderRadius: radius.md,
+  },
+  remixBtnText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: colors.onPrimary,
+  },
   arrowIcon: { transform: [{ rotate: '45deg' }] },
+
+  // Wardrobe Utilization Stats Card (Issue #26)
+  insightStatsCard: {
+    backgroundColor: colors.surfaceCard,
+    borderRadius: radius.md,
+    padding: spacing.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+    gap: spacing.sm,
+  },
+  insightStatsHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  insightStatsTitleGroup: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  insightStatsTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: colors.text,
+  },
+  insightStatsSub: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: colors.textMuted,
+  },
+  statBarsGroup: {
+    gap: spacing.sm,
+  },
+  statRow: {
+    gap: 5,
+  },
+  statLabelRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  statPeriodLabel: {
+    fontSize: 12,
+    color: colors.textMuted,
+    fontWeight: '500',
+  },
+  statValueText: {
+    fontSize: 12,
+    color: colors.text,
+    fontWeight: '700',
+  },
+  progressTrack: {
+    height: 7,
+    borderRadius: radius.full,
+    backgroundColor: colors.surfaceSubtle,
+    overflow: 'hidden',
+  },
+  progressFill: {
+    height: '100%',
+    borderRadius: radius.full,
+    backgroundColor: colors.primary,
+  },
+  progressFillMonthly: {
+    height: '100%',
+    borderRadius: radius.full,
+    backgroundColor: '#0EA5E9',
+  },
 });
 
