@@ -4,9 +4,6 @@ import { Platform } from 'react-native';
 export class FileRepository {
   private static WARDROBE_DIR = (FileSystem.documentDirectory || '') + 'wardrobe/';
 
-  /**
-   * Đảm bảo thư mục lưu trữ ảnh tủ đồ tồn tại
-   */
   private static async ensureDirExists() {
     if (Platform.OS === 'web' || !FileSystem.documentDirectory) return;
     try {
@@ -19,10 +16,23 @@ export class FileRepository {
     }
   }
 
-  /**
-   * Lưu ảnh trang phục vào bộ nhớ ứng dụng vĩnh viễn (documentDirectory).
-   * Hỗ trợ cả Base64 Data URL (từ AI tách nền) và File URI cục bộ.
-   */
+  /** Đường dẫn tuyệt đối có thể đổi sau khi cập nhật app (iOS): luôn ghép lại từ tên file. */
+  static resolveUri(path: string): string {
+    if (!path || path.startsWith('data:') || Platform.OS === 'web') return path;
+    const i = path.lastIndexOf('/wardrobe/');
+    return i >= 0 ? this.WARDROBE_DIR + path.slice(i + '/wardrobe/'.length) : path;
+  }
+
+  /** Xóa file ảnh của món đồ (chỉ file nằm trong thư mục wardrobe). */
+  static async deleteItemImage(path: string): Promise<void> {
+    if (Platform.OS === 'web' || !path.startsWith(this.WARDROBE_DIR)) return;
+    try {
+      await FileSystem.deleteAsync(path, { idempotent: true });
+    } catch (e) {
+      console.warn('Lỗi xóa file ảnh:', e);
+    }
+  }
+
   static async saveItemImage(sourceUri: string): Promise<string> {
     if (Platform.OS === 'web' || !FileSystem.documentDirectory) {
       return sourceUri;
@@ -32,28 +42,21 @@ export class FileRepository {
       await this.ensureDirExists();
       const uniqueSuffix = `${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
 
-      // 1. Trường hợp là Data URL Base64 (Ảnh PNG trong suốt từ Backend)
       if (sourceUri.startsWith('data:image/')) {
         const matches = sourceUri.match(/^data:image\/([a-zA-Z0-9]+);base64,(.+)$/);
         const ext = matches ? matches[1] : 'png';
         const base64Data = matches ? matches[2] : sourceUri;
         const targetPath = `${this.WARDROBE_DIR}item_${uniqueSuffix}.${ext}`;
-
         await FileSystem.writeAsStringAsync(targetPath, base64Data, {
           encoding: FileSystem.EncodingType.Base64,
         });
         return targetPath;
       }
 
-      // 2. Trường hợp là File URI tạm thời từ camera hoặc thư viện
       if (sourceUri.startsWith('file://') || sourceUri.startsWith('/')) {
         const ext = sourceUri.split('.').pop() || 'jpg';
         const targetPath = `${this.WARDROBE_DIR}item_${uniqueSuffix}.${ext}`;
-
-        await FileSystem.copyAsync({
-          from: sourceUri,
-          to: targetPath,
-        });
+        await FileSystem.copyAsync({ from: sourceUri, to: targetPath });
         return targetPath;
       }
 

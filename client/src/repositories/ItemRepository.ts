@@ -1,10 +1,14 @@
 import { getDb } from '../db/database';
+import { ColorHarmonyEngine } from '../engine/ColorHarmonyEngine';
 import { CreateItemDTO, WardrobeItem } from '../types/item';
+import { FileRepository } from './FileRepository';
+
+const withUri = (r: WardrobeItem): WardrobeItem => ({
+  ...r,
+  image_path: FileRepository.resolveUri(r.image_path),
+});
 
 export class ItemRepository {
-  /**
-   * Thêm một món đồ mới vào SQLite
-   */
   static async create(dto: CreateItemDTO): Promise<WardrobeItem> {
     const db = await getDb();
     const contextsStr = dto.contexts.join(',');
@@ -35,32 +39,18 @@ export class ItemRepository {
     return item;
   }
 
-  /**
-   * Lấy chi tiết một món đồ theo ID
-   */
   static async getById(id: number): Promise<WardrobeItem | null> {
     const db = await getDb();
-    const row = await db.getFirstAsync<WardrobeItem>(
-      'SELECT * FROM items WHERE id = ?',
-      [id],
-    );
-    return row || null;
+    const row = await db.getFirstAsync<WardrobeItem>('SELECT * FROM items WHERE id = ?', [id]);
+    return row ? withUri(row) : null;
   }
 
-  /**
-   * Lấy toàn bộ danh sách món đồ trong tủ đồ, sắp xếp mới nhất lên đầu
-   */
   static async getAll(): Promise<WardrobeItem[]> {
     const db = await getDb();
-    const rows = await db.getAllAsync<WardrobeItem>(
-      'SELECT * FROM items ORDER BY id DESC',
-    );
-    return rows || [];
+    const rows = await db.getAllAsync<WardrobeItem>('SELECT * FROM items ORDER BY id DESC');
+    return (rows || []).map(withUri);
   }
 
-  /**
-   * Lấy danh sách món đồ theo danh mục (Áo, Quần, Váy, Giày)
-   */
   static async getByCategory(category: string): Promise<WardrobeItem[]> {
     const db = await getDb();
     if (!category || category === 'Tất cả') {
@@ -70,20 +60,14 @@ export class ItemRepository {
       'SELECT * FROM items WHERE category = ? ORDER BY id DESC',
       [category],
     );
-    return rows || [];
+    return (rows || []).map(withUri);
   }
 
-  /**
-   * Xóa một món đồ khỏi tủ đồ
-   */
   static async delete(id: number): Promise<void> {
     const db = await getDb();
     await db.runAsync('DELETE FROM items WHERE id = ?', [id]);
   }
 
-  /**
-   * Cập nhật thông tin món đồ
-   */
   static async update(
     id: number,
     data: {
@@ -106,22 +90,25 @@ export class ItemRepository {
     const formality = (data.formality !== undefined ? data.formality : current.formality) ?? 3;
     const contexts = (data.contexts !== undefined ? data.contexts.join(',') : current.contexts) ?? '';
 
+    // Đổi màu thì phải cập nhật cả HSL, vì engine gợi ý chấm điểm bằng HSL
+    let { color_h, color_s, color_l } = current;
+    if (data.color_hex && data.color_hex.toLowerCase() !== (current.color_hex || '').toLowerCase()) {
+      const hsl = ColorHarmonyEngine.hexToHsl(data.color_hex);
+      color_h = hsl.h;
+      color_s = hsl.s;
+      color_l = hsl.l;
+    }
+
     await db.runAsync(
-      `UPDATE items SET name = ?, category = ?, color_name = ?, color_hex = ?, formality = ?, contexts = ? WHERE id = ?`,
-      [name, category, color_name, color_hex, formality, contexts, id],
+      `UPDATE items SET name = ?, category = ?, color_name = ?, color_hex = ?, color_h = ?, color_s = ?, color_l = ?, formality = ?, contexts = ? WHERE id = ?`,
+      [name, category, color_name, color_hex, color_h, color_s, color_l, formality, contexts, id],
     );
     return this.getById(id);
   }
 
-  /**
-   * Đếm tổng số lượng món đồ
-   */
   static async count(): Promise<number> {
     const db = await getDb();
-    const row = await db.getFirstAsync<{ count: number }>(
-      'SELECT COUNT(*) as count FROM items',
-    );
+    const row = await db.getFirstAsync<{ count: number }>('SELECT COUNT(*) as count FROM items');
     return row?.count || 0;
   }
 }
-

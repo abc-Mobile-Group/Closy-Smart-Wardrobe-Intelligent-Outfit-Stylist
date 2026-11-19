@@ -28,25 +28,23 @@ export interface SuggestedOutfit {
 
 export class OutfitService {
   /**
-   * Gọi Backend API POST /outfit/suggest để xử lý gợi ý phối đồ thông minh.
-   * Nếu có lỗi mạng hoặc backend offline, tự động fallback về ColorHarmonyEngine local tại client (Local-First).
+   * Gọi Backend POST /outfit/suggest. Lỗi mạng/backend -> fallback engine local.
+   * Không gửi ảnh lên server (data URL base64 rất nặng); ảnh lấy lại từ tủ đồ local.
    */
   static async getSuggestions(
     items: WardrobeItem[],
     contextName: string,
     weather: WeatherData,
   ): Promise<SuggestedOutfit[]> {
-    if (!items || items.length === 0) {
-      return [];
-    }
+    if (!items || items.length === 0) return [];
+
+    const byId = new Map(items.map((i) => [String(i.id), i]));
 
     try {
-      // 1. Chuẩn bị payload gửi lên Backend
       const payloadItems = items.map((it) => ({
         id: it.id,
         name: it.name || `${it.category} ${it.color_name || ''}`.trim(),
         category: it.category,
-        image_path: it.image_path,
         color_h: it.color_h ?? 0,
         color_s: it.color_s ?? 0,
         color_l: it.color_l ?? 100,
@@ -65,7 +63,6 @@ export class OutfitService {
         recommendation_advice: weather.recommendationAdvice,
       };
 
-      // 2. Gửi yêu cầu gợi ý lên Backend
       const response = await outfitApi.suggest({
         items: payloadItems,
         context: contextName,
@@ -90,7 +87,7 @@ export class OutfitService {
             category: it.category,
             colorName: it.color_name,
             colorHex: it.color_hex,
-            image: { uri: it.image_path },
+            image: { uri: byId.get(String(it.id))?.image_path ?? '' },
           })),
         }));
       }
@@ -98,7 +95,6 @@ export class OutfitService {
       console.warn('[OutfitService] Lỗi gọi Backend gợi ý, kích hoạt Local-First fallback:', apiError);
     }
 
-    // 3. Fallback Local-First tại Client khi mất mạng (Sử dụng ColorHarmonyEngine & suggest.ts)
     const localSuggestions = generateOutfitSuggestions(items, contextName, weather);
     return localSuggestions.map((s, idx) => ({
       id: `local-${idx + 1}`,
@@ -122,6 +118,3 @@ export class OutfitService {
     }));
   }
 }
-
-
-
