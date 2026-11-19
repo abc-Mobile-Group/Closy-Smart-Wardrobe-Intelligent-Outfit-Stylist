@@ -68,8 +68,21 @@ export class StorageService {
    */
   static resolveImageUri(relativeOrUri: string): string {
     if (!relativeOrUri) return '';
+
+    /* [Code cũ]
     if (
       relativeOrUri.startsWith('file://') ||
+      relativeOrUri.startsWith('data:') ||
+      relativeOrUri.startsWith('http://') ||
+      relativeOrUri.startsWith('https://') ||
+      relativeOrUri.startsWith('content://') ||
+      relativeOrUri.startsWith('asset://')
+    ) {
+      return relativeOrUri;
+    }
+    */
+
+    if (
       relativeOrUri.startsWith('data:') ||
       relativeOrUri.startsWith('http://') ||
       relativeOrUri.startsWith('https://') ||
@@ -86,6 +99,22 @@ export class StorageService {
     const baseDir = FileSystem.documentDirectory.endsWith('/')
       ? FileSystem.documentDirectory
       : `${FileSystem.documentDirectory}/`;
+
+    // Nếu là file:// từ sandbox cũ (ví dụ sau khi cập nhật app trên iOS), ghép lại theo documentDirectory hiện tại
+    if (relativeOrUri.startsWith('file://')) {
+      const closyMarker = `/${this.WARDROBE_FOLDER}/`;
+      const closyIdx = relativeOrUri.lastIndexOf(closyMarker);
+      if (closyIdx >= 0 && !relativeOrUri.startsWith(baseDir)) {
+        return `${baseDir}${this.WARDROBE_FOLDER}/${relativeOrUri.slice(closyIdx + closyMarker.length)}`;
+      }
+      const legacyMarker = '/wardrobe/';
+      const legacyIdx = relativeOrUri.lastIndexOf(legacyMarker);
+      if (legacyIdx >= 0 && !relativeOrUri.startsWith(baseDir)) {
+        return `${baseDir}wardrobe/${relativeOrUri.slice(legacyIdx + legacyMarker.length)}`;
+      }
+      return relativeOrUri;
+    }
+
     const cleanRelative = relativeOrUri.replace(/^\.?\//, '');
     return `${baseDir}${cleanRelative}`;
   }
