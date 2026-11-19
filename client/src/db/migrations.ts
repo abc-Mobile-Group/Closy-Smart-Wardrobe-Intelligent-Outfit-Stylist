@@ -5,14 +5,14 @@ const MIGRATIONS: string[] = [
   // v1
   `CREATE TABLE items (
      id          INTEGER PRIMARY KEY AUTOINCREMENT,
-     category    TEXT    NOT NULL,              -- 'Áo' | 'Quần' | 'Váy' | 'Giày'
-     image_path  TEXT    NOT NULL,              -- đường dẫn tương đối trong thư mục app
-     color_h     INTEGER NOT NULL,              -- 0-360
-     color_s     INTEGER NOT NULL,              -- 0-100
-     color_l     INTEGER NOT NULL,              -- 0-100
-     formality   INTEGER NOT NULL DEFAULT 3,    -- 1 | 3 | 5
-     contexts    TEXT    NOT NULL DEFAULT '',   -- 'school,work'
-     last_worn   TEXT,                          -- ISO date, rỗng nếu chưa mặc
+     category    TEXT    NOT NULL,
+     image_path  TEXT    NOT NULL,
+     color_h     INTEGER NOT NULL,
+     color_s     INTEGER NOT NULL,
+     color_l     INTEGER NOT NULL,
+     formality   INTEGER NOT NULL DEFAULT 3,
+     contexts    TEXT    NOT NULL DEFAULT '',
+     last_worn   TEXT,
      wear_count  INTEGER NOT NULL DEFAULT 0,
      created_at  TEXT    NOT NULL DEFAULT (datetime('now'))
    );
@@ -22,6 +22,16 @@ const MIGRATIONS: string[] = [
   `ALTER TABLE items ADD COLUMN name TEXT;
    ALTER TABLE items ADD COLUMN color_name TEXT;
    ALTER TABLE items ADD COLUMN color_hex TEXT;`,
+
+  // v3: lịch sử mặc đồ
+  `CREATE TABLE history (
+     id         INTEGER PRIMARY KEY AUTOINCREMENT,
+     worn_date  TEXT NOT NULL,
+     context    TEXT NOT NULL DEFAULT '',
+     item_ids   TEXT NOT NULL,
+     created_at TEXT NOT NULL DEFAULT (datetime('now'))
+   );
+   CREATE INDEX idx_history_date ON history(worn_date);`,
 ];
 
 export async function migrate(db: SQLiteDatabase): Promise<void> {

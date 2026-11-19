@@ -38,28 +38,21 @@ export class FileRepository {
       await this.ensureDirExists();
       const uniqueSuffix = `${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
 
-      // 1. Trường hợp là Data URL Base64 (Ảnh PNG trong suốt từ Backend)
       if (sourceUri.startsWith('data:image/')) {
         const matches = sourceUri.match(/^data:image\/([a-zA-Z0-9]+);base64,(.+)$/);
         const ext = matches ? matches[1] : 'png';
         const base64Data = matches ? matches[2] : sourceUri;
         const targetPath = `${this.WARDROBE_DIR}item_${uniqueSuffix}.${ext}`;
-
         await FileSystem.writeAsStringAsync(targetPath, base64Data, {
           encoding: FileSystem.EncodingType.Base64,
         });
         return targetPath;
       }
 
-      // 2. Trường hợp là File URI tạm thời từ camera hoặc thư viện
       if (sourceUri.startsWith('file://') || sourceUri.startsWith('/')) {
         const ext = sourceUri.split('.').pop() || 'jpg';
         const targetPath = `${this.WARDROBE_DIR}item_${uniqueSuffix}.${ext}`;
-
-        await FileSystem.copyAsync({
-          from: sourceUri,
-          to: targetPath,
-        });
+        await FileSystem.copyAsync({ from: sourceUri, to: targetPath });
         return targetPath;
       }
 
@@ -83,6 +76,13 @@ export class FileRepository {
    */
   static resolveImageUri(relativeOrUri: string): string {
     return StorageService.resolveImageUri(relativeOrUri);
+  }
+
+  /**
+   * Alias tương thích với main: resolve đường dẫn ảnh sang URI hiển thị
+   */
+  static resolveUri(path: string): string {
+    return StorageService.resolveImageUri(path);
   }
 
   /**

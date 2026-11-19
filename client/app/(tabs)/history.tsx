@@ -1,33 +1,62 @@
-import React, { useState } from 'react';
-import {
-  Alert,
-  Image,
-  Platform,
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  Text,
-  View,
-} from 'react-native';
+import React, { useCallback, useMemo, useState } from 'react';
+import { Image, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors, radius, spacing } from '../../src/constants/theme';
 import { useAuthStore } from '../../src/store/authStore';
 import { useWardrobeStore } from '../../src/store/wardrobeStore';
+import { HistoryEntry, HistoryService } from '../../src/services/HistoryService';
+import { toDateKey } from '../../src/utils/date';
 
 const DAYS_OF_WEEK = ['T2', 'T3', 'T4', 'T5', 'T6', 'T7', 'CN'];
-const WORN_DAYS = [1, 6, 9, 12, 15, 17, 19];
 
 export default function HistoryScreen() {
+  const { saved } = useLocalSearchParams<{ saved?: string }>();
   const { email, name, openProfile } = useAuthStore();
   const { items } = useWardrobeStore();
-  const [showBanner, setShowBanner] = useState(true);
-  const [selectedDay, setSelectedDay] = useState(19);
+  const [showBanner, setShowBanner] = useState(saved === '1');
+  const todayKey = toDateKey();
+  const [cursor, setCursor] = useState(() => {
+    const n = new Date();
+    return new Date(n.getFullYear(), n.getMonth(), 1);
+  });
+  const [selectedKey, setSelectedKey] = useState(todayKey);
+  const [entries, setEntries] = useState<HistoryEntry[]>([]);
+
+  const year = cursor.getFullYear();
+  const month = cursor.getMonth();
+
+  useFocusEffect(
+    useCallback(() => {
+      HistoryService.getMonth(year, month).then(setEntries).catch(() => setEntries([]));
+      if (saved === '1') setShowBanner(true);
+    }, [year, month, saved]),
+  );
 
   const displayName = name || (email ? email.split('@')[0] : 'An');
   const initial = displayName.charAt(0).toUpperCase();
 
-  const userItems = items.slice(0, 3);
+  const wornDays = useMemo(
+    () => new Set(entries.map((e) => Number(e.worn_date.slice(8, 10)))),
+    [entries],
+  );
+  const leadingBlanks = (new Date(year, month, 1).getDay() + 6) % 7; // tuần bắt đầu T2
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+
+  const dayKey = (d: number) => toDateKey(new Date(year, month, d));
+  const selectedEntry = entries.find((e) => e.worn_date === selectedKey) ?? null;
+  const userItems = useMemo(() => {
+    if (!selectedEntry) return [];
+    const ids = selectedEntry.item_ids.split(',').map(Number);
+    return ids.map((id) => items.find((i) => i.id === id)).filter(Boolean) as typeof items;
+  }, [selectedEntry, items]);
+
+  const selDate = new Date(selectedKey.replace(/-/g, '/'));
+  const selLabel = `${selDate.getDate()} tháng ${selDate.getMonth() + 1}`;
+  const sectionTitle = selectedKey === todayKey ? `Hôm nay, ${selLabel}` : selLabel;
+
+  const shiftMonth = (delta: number) => setCursor(new Date(year, month + delta, 1));
 
   return (
     <SafeAreaView style={styles.safeArea} edges={['top']}>
@@ -36,7 +65,6 @@ export default function HistoryScreen() {
         contentContainerStyle={styles.content}
         showsVerticalScrollIndicator={false}
       >
-        {/* Header */}
         <View style={styles.header}>
           <View style={styles.headerLeft}>
             <Text style={styles.title}>Những ngày mặc đẹp</Text>
@@ -47,7 +75,6 @@ export default function HistoryScreen() {
           </Pressable>
         </View>
 
-        {/* Success Alert Banner */}
         {showBanner && (
           <View style={styles.alertBanner}>
             <View style={styles.alertIconBg}>
@@ -55,7 +82,7 @@ export default function HistoryScreen() {
             </View>
             <View style={styles.alertTextGroup}>
               <Text style={styles.alertTitle}>Đã lưu bộ đồ hôm nay</Text>
-              <Text style={styles.alertSubtitle}>Chúc bạn một ngày đến lớp thật vui!</Text>
+              <Text style={styles.alertSubtitle}>Chúc bạn một ngày thật vui!</Text>
             </View>
             <Pressable onPress={() => setShowBanner(false)} hitSlop={8}>
               <Ionicons name="close" size={16} color={colors.textLight} />
@@ -63,69 +90,56 @@ export default function HistoryScreen() {
           </View>
         )}
 
-        {/* Calendar Widget */}
         <View style={styles.calendarCard}>
-          {/* Calendar Header */}
           <View style={styles.calendarHeader}>
-            <Pressable hitSlop={8}>
+            <Pressable hitSlop={8} onPress={() => shiftMonth(-1)}>
               <Ionicons name="chevron-back" size={18} color={colors.textMuted} />
             </Pressable>
-            <Text style={styles.calendarMonth}>Tháng 10, 2026</Text>
-            <Pressable hitSlop={8}>
+            <Text style={styles.calendarMonth}>Tháng {month + 1}, {year}</Text>
+            <Pressable hitSlop={8} onPress={() => shiftMonth(1)}>
               <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
             </Pressable>
           </View>
 
-          {/* Weekday Labels */}
           <View style={styles.weekRow}>
-            {DAYS_OF_WEEK.map((day) => (
-              <View key={day} style={styles.weekCol}>
-                <Text style={styles.weekText}>{day}</Text>
+            {DAYS_OF_WEEK.map((d) => (
+              <View key={d} style={styles.weekCol}>
+                <Text style={styles.weekText}>{d}</Text>
               </View>
             ))}
           </View>
 
-          {/* Month Grid */}
           <View style={styles.daysGrid}>
-            {/* Empty slots for start of month (Tháng 10/2026 bắt đầu từ Thứ Năm: T2, T3, T4 trống) */}
-            <View style={styles.dayCellWrapper} />
-            <View style={styles.dayCellWrapper} />
-            <View style={styles.dayCellWrapper} />
-
-            {Array.from({ length: 31 }, (_, i) => i + 1).map((day) => {
-              const isSelected = selectedDay === day;
-              const hasWorn = WORN_DAYS.includes(day);
-
+            {Array.from({ length: leadingBlanks }, (_, i) => (
+              <View key={`b${i}`} style={styles.dayCellWrapper} />
+            ))}
+            {Array.from({ length: daysInMonth }, (_, i) => i + 1).map((day) => {
+              const key = dayKey(day);
+              const isSelected = selectedKey === key;
               return (
                 <View key={day} style={styles.dayCellWrapper}>
                   <Pressable
                     style={[styles.dayCell, isSelected && styles.dayCellSelected]}
-                    onPress={() => setSelectedDay(day)}
+                    onPress={() => setSelectedKey(key)}
                   >
-                    <Text style={[styles.dayText, isSelected && styles.dayTextSelected]}>
-                      {day}
-                    </Text>
-                    {hasWorn && !isSelected && <View style={styles.wornDot} />}
+                    <Text style={[styles.dayText, isSelected && styles.dayTextSelected]}>{day}</Text>
+                    {wornDays.has(day) && !isSelected && <View style={styles.wornDot} />}
                   </Pressable>
                 </View>
               );
             })}
           </View>
 
-          {/* Legend */}
           <View style={styles.calendarLegend}>
             <View style={styles.legendDot} />
             <Text style={styles.legendText}>Ngày đã xác nhận mặc</Text>
           </View>
         </View>
 
-        {/* Outfit for Selected Day */}
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Hôm nay, {selectedDay} tháng 10</Text>
-
-          {userItems.length > 0 ? (
+          <Text style={styles.sectionTitle}>{sectionTitle}</Text>
+          {selectedEntry && userItems.length > 0 ? (
             <View style={styles.todayOutfitCard}>
-              {/* items horizontal */}
               <View style={styles.outfitRow}>
                 {userItems.map((it) => (
                   <Image
@@ -136,12 +150,12 @@ export default function HistoryScreen() {
                   />
                 ))}
               </View>
-
-              {/* Meta */}
               <View style={styles.outfitCardFooter}>
-                <View>
-                  <Text style={styles.outfitCardTitle}>{userItems[0].name}</Text>
-                  <Text style={styles.outfitCardDesc}>Bộ đồ từ tủ đồ cá nhân của bạn</Text>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.outfitCardTitle} numberOfLines={2}>
+                    {userItems.map((i) => i.name).join(' + ')}
+                  </Text>
+                  <Text style={styles.outfitCardDesc}>{selectedEntry.context}</Text>
                 </View>
                 <View style={styles.wornBadge}>
                   <Ionicons name="checkmark-circle-outline" size={14} color={colors.primary} />
@@ -152,8 +166,10 @@ export default function HistoryScreen() {
           ) : (
             <View style={styles.emptyHistoryBox}>
               <Ionicons name="calendar-outline" size={32} color={colors.primary} />
-              <Text style={styles.emptyHistoryText}>Chưa có lịch sử mặc đồ</Text>
-              <Text style={styles.emptyHistorySub}>Hãy chọn và xác nhận trang phục bạn mặc để lưu lịch sử nhé.</Text>
+              <Text style={styles.emptyHistoryText}>Chưa có lịch sử mặc đồ ngày này</Text>
+              <Text style={styles.emptyHistorySub}>
+                Hãy chọn và xác nhận trang phục bạn mặc để lưu lịch sử nhé.
+              </Text>
             </View>
           )}
         </View>
@@ -167,7 +183,6 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.bg },
   content: { padding: spacing.md, paddingBottom: 50, gap: spacing.md },
 
-  // Header
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -188,7 +203,6 @@ const styles = StyleSheet.create({
   },
   avatarText: { fontSize: 16, fontWeight: '700', color: colors.primary },
 
-  // Alert Banner
   alertBanner: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -212,7 +226,6 @@ const styles = StyleSheet.create({
   alertTitle: { fontSize: 13, fontWeight: '700', color: colors.text },
   alertSubtitle: { fontSize: 11, color: colors.textMuted, marginTop: 1 },
 
-  // Calendar
   calendarCard: {
     backgroundColor: colors.surfaceCard,
     borderRadius: radius.lg,
@@ -229,21 +242,10 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.xs,
   },
   calendarMonth: { fontSize: 15, fontWeight: '700', color: colors.text },
-  weekRow: {
-    flexDirection: 'row',
-    marginTop: spacing.xs,
-  },
-  weekCol: {
-    width: '14.285%',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
+  weekRow: { flexDirection: 'row', marginTop: spacing.xs },
+  weekCol: { width: '14.285%', alignItems: 'center', justifyContent: 'center' },
   weekText: { fontSize: 11, fontWeight: '600', color: colors.textLight, textAlign: 'center' },
-  daysGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    rowGap: 6,
-  },
+  daysGrid: { flexDirection: 'row', flexWrap: 'wrap', rowGap: 6 },
   dayCellWrapper: {
     width: '14.285%',
     alignItems: 'center',
@@ -257,9 +259,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  dayCellSelected: {
-    backgroundColor: colors.primary,
-  },
+  dayCellSelected: { backgroundColor: colors.primary },
   dayText: { fontSize: 12, fontWeight: '600', color: colors.text },
   dayTextSelected: { color: colors.onPrimary, fontWeight: '700' },
   wornDot: {
@@ -280,7 +280,6 @@ const styles = StyleSheet.create({
   legendDot: { width: 5, height: 5, borderRadius: 2.5, backgroundColor: colors.primary },
   legendText: { fontSize: 11, color: colors.textMuted },
 
-  // Today Section
   section: { gap: spacing.sm },
   sectionTitle: { fontSize: 16, fontWeight: '700', color: colors.text },
 
@@ -301,6 +300,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
+    gap: spacing.sm,
   },
   outfitCardTitle: { fontSize: 14, fontWeight: '700', color: colors.text },
   outfitCardDesc: { fontSize: 12, color: colors.textMuted, marginTop: 2 },
@@ -323,30 +323,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: spacing.xs,
   },
-  emptyHistoryText: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: colors.text,
-  },
-  emptyHistorySub: {
-    fontSize: 12,
-    color: colors.textMuted,
-    textAlign: 'center',
-  },
-
-  // Past
-  pastDateLabel: { fontSize: 11, fontWeight: '700', color: colors.textMuted, letterSpacing: 0.5 },
-  pastCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: colors.surfaceSubtle,
-    borderRadius: radius.md,
-    padding: spacing.sm + 2,
-    gap: spacing.sm,
-  },
-  pastThumb: { width: 50, height: 50, borderRadius: radius.xs, backgroundColor: '#EAE6E1' },
-  pastInfo: { flex: 1, gap: 2 },
-  pastTitle: { fontSize: 13, fontWeight: '700', color: colors.text },
-  pastSubtitle: { fontSize: 11, color: colors.textMuted },
+  emptyHistoryText: { fontSize: 14, fontWeight: '700', color: colors.text },
+  emptyHistorySub: { fontSize: 12, color: colors.textMuted, textAlign: 'center' },
 });
-

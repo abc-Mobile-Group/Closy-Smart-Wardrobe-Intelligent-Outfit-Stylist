@@ -7,7 +7,8 @@ import os
 import secrets
 import sqlite3
 import time
-
+import hmac
+from starlette.concurrency import run_in_threadpool
 from dotenv import load_dotenv
 import jwt
 import numpy as np
@@ -19,6 +20,9 @@ from google.oauth2 import id_token
 from PIL import Image
 from pydantic import BaseModel
 import rembg
+
+Image.MAX_IMAGE_PIXELS = 40_000_000  # chặn decompression bomb
+ALLOWED_ORIGINS = [o.strip() for o in os.environ.get("ALLOWED_ORIGINS", "*").split(",")]
 
 try:
     from color_extractor import extract_colors_from_rgba

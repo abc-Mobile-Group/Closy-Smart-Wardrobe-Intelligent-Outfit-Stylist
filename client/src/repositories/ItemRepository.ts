@@ -1,4 +1,5 @@
 import { getDb } from '../db/database';
+import { ColorHarmonyEngine } from '../engine/ColorHarmonyEngine';
 import { StorageService } from '../services/StorageService';
 import { CreateItemDTO, WardrobeItem } from '../types/item';
 
@@ -126,9 +127,18 @@ export class ItemRepository {
     const formality = (data.formality !== undefined ? data.formality : current.formality) ?? 3;
     const contexts = (data.contexts !== undefined ? data.contexts.join(',') : current.contexts) ?? '';
 
+    // Đổi màu thì phải cập nhật cả HSL, vì engine gợi ý chấm điểm bằng HSL
+    let { color_h, color_s, color_l } = current;
+    if (data.color_hex && data.color_hex.toLowerCase() !== (current.color_hex || '').toLowerCase()) {
+      const hsl = ColorHarmonyEngine.hexToHsl(data.color_hex);
+      color_h = hsl.h;
+      color_s = hsl.s;
+      color_l = hsl.l;
+    }
+
     await db.runAsync(
-      `UPDATE items SET name = ?, category = ?, color_name = ?, color_hex = ?, formality = ?, contexts = ? WHERE id = ?`,
-      [name, category, color_name, color_hex, formality, contexts, id],
+      `UPDATE items SET name = ?, category = ?, color_name = ?, color_hex = ?, color_h = ?, color_s = ?, color_l = ?, formality = ?, contexts = ? WHERE id = ?`,
+      [name, category, color_name, color_hex, color_h, color_s, color_l, formality, contexts, id],
     );
     return this.getById(id);
   }
