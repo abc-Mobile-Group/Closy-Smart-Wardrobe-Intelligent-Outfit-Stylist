@@ -20,6 +20,11 @@ export type ProcessImageResult = {
 };
 
 export class ImageService {
+  // Timeout chuẩn 12 giây cho request tách nền AI (Issue #19)
+  static readonly REQUEST_TIMEOUT_MS = 12000;
+  static readonly FALLBACK_MESSAGE =
+    'Server bận. Closy sẽ dùng ảnh gốc để bạn không bị gián đoạn.';
+
   /**
    * Nén và thu nhỏ ảnh: Giới hạn cạnh dài nhất về khoảng 800px với chất lượng 80% JPEG.
    * Giúp kích thước tệp upload luôn nhỏ (< 300KB), tối ưu băng thông và giảm thời gian AI xử lý < 2s.
@@ -62,7 +67,8 @@ export class ImageService {
       if (compressed.base64) {
         // Gửi qua JSON Base64: Giải pháp tối ưu nhất cho React Native / Expo Go
         console.log('[ImageService] 3. Đang gửi ảnh qua JSON Base64 tới Backend API POST /image/process...');
-        res = await imageApi.processBase64(compressed.base64, 35000);
+        // [Code cũ]: res = await imageApi.processBase64(compressed.base64, 35000);
+        res = await imageApi.processBase64(compressed.base64, this.REQUEST_TIMEOUT_MS);
       } else {
         // Fallback FormData nếu không trích xuất được base64
         console.log('[ImageService] 3. Đang gửi ảnh qua FormData tới Backend API POST /image/process...');
@@ -81,7 +87,8 @@ export class ImageService {
             type: fileType,
           } as any);
         }
-        res = await imageApi.process(formData, 35000);
+        // [Code cũ]: res = await imageApi.process(formData, 35000);
+        res = await imageApi.process(formData, this.REQUEST_TIMEOUT_MS);
       }
 
       console.log('[ImageService] 4. Backend trả kết quả:', {
@@ -131,13 +138,14 @@ export class ImageService {
         stack: error?.stack,
         raw: error,
       });
-      // Cơ chế Graceful Degradation: Giữ nguyên ảnh gốc để người dùng không bị gián đoạn trải nghiệm
+      // Cơ chế Graceful Degradation (Issue #19): Giữ nguyên ảnh gốc để người dùng không bị gián đoạn trải nghiệm
       return {
         success: false,
         uri: uri,
         isTransparent: false,
         isFallback: true,
-        errorMessage: error?.message || 'Không thể tách nền tự động, sử dụng ảnh gốc.',
+        // [Code cũ]: errorMessage: error?.message || 'Không thể tách nền tự động, sử dụng ảnh gốc.',
+        errorMessage: ImageService.FALLBACK_MESSAGE,
       };
     }
   }

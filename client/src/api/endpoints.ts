@@ -125,13 +125,15 @@ export const outfitApi = {
 };
 
 export const imageApi = {
-  processBase64: (imageBase64: string, timeoutMs = 35000) =>
+  // [Code cũ]: processBase64: (imageBase64: string, timeoutMs = 35000) =>
+  processBase64: (imageBase64: string, timeoutMs = 12000) =>
     apiFetch<ProcessImageResponse>('/image/process', {
       method: 'POST',
       body: JSON.stringify({ image_base64: imageBase64 }),
     }, { auth: true, timeoutMs }),
 
-  process: (formData: FormData, timeoutMs = 35000) =>
+  // [Code cũ]: process: (formData: FormData, timeoutMs = 35000) =>
+  process: (formData: FormData, timeoutMs = 12000) =>
     apiFetch<ProcessImageResponse>('/image/process', {
       method: 'POST',
       body: formData,

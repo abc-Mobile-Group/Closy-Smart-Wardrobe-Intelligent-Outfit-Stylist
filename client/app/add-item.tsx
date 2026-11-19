@@ -64,6 +64,9 @@ export default function AddItemScreen() {
   const [isAiTransparent, setIsAiTransparent] = useState(false);
   const [aiDetectedColor, setAiDetectedColor] = useState<ProcessedColor | null>(null);
   const [selectedColorId, setSelectedColorId] = useState<string>('white');
+  // Cơ chế Fallback Offline (Issue #19): thông báo nhẹ & tự mở bảng màu chọn nhanh
+  const [fallbackNotice, setFallbackNotice] = useState<string | null>(null);
+  const [showQuickColorPicker, setShowQuickColorPicker] = useState(false);
 
   // Màu sắc hiện thời đang chọn: Đồng nhất 100% trên toàn bộ giao diện và cơ sở dữ liệu
   const activeColor = useMemo(() => {
@@ -170,6 +173,8 @@ export default function AddItemScreen() {
    */
   const processImageUri = async (rawUri: string) => {
     setIsProcessingImage(true);
+    setFallbackNotice(null);
+    setShowQuickColorPicker(false);
     try {
       const result = await ImageService.processClothingImage(rawUri);
 
@@ -185,6 +190,17 @@ export default function AddItemScreen() {
 
       setCurrentImageUri(result.uri);
       setIsAiTransparent(result.isTransparent);
+
+      // Fallback Offline (Issue #19): Server bận/timeout -> giữ ảnh gốc, báo nhẹ & mở bảng màu chọn nhanh
+      if (result.isFallback) {
+        setAiDetectedColor(null);
+        setFallbackNotice(result.errorMessage || ImageService.FALLBACK_MESSAGE);
+        setShowQuickColorPicker(true);
+        if (!itemName || itemName.trim() === '') {
+          setItemName(`${category} ${activeColor.name.toLowerCase()}`);
+        }
+        return;
+      }
 
       if (result.color) {
         setAiDetectedColor(result.color);
@@ -248,8 +264,14 @@ export default function AddItemScreen() {
       }
     } catch (e: any) {
       console.warn('Lỗi khi xử lý ảnh:', e);
+      // [Code cũ]:
+      // setCurrentImageUri(rawUri);
+      // setIsAiTransparent(false);
       setCurrentImageUri(rawUri);
       setIsAiTransparent(false);
+      setAiDetectedColor(null);
+      setFallbackNotice(ImageService.FALLBACK_MESSAGE);
+      setShowQuickColorPicker(true);
     } finally {
       setIsProcessingImage(false);
     }
@@ -455,6 +477,64 @@ export default function AddItemScreen() {
             </Pressable>
           </View>
         </View>
+
+        {/* Thông báo nhẹ Fallback Offline (Issue #19): Không chặn luồng thêm đồ */}
+        {fallbackNotice && (
+          <View style={styles.fallbackBanner} accessibilityLiveRegion="polite">
+            <Ionicons name="cloud-offline-outline" size={18} color="#B45309" />
+            <Text style={styles.fallbackBannerText}>{fallbackNotice}</Text>
+            <Pressable
+              onPress={() => setFallbackNotice(null)}
+              hitSlop={8}
+              accessibilityLabel="Đóng thông báo"
+            >
+              <Ionicons name="close" size={16} color="#92400E" />
+            </Pressable>
+          </View>
+        )}
+
+        {/* Bảng màu chọn nhanh mở tự động khi Fallback Offline (Issue #19) */}
+        {showQuickColorPicker && (
+          <View style={styles.quickColorCard}>
+            <View style={styles.quickColorHeader}>
+              <View style={styles.quickColorTitleRow}>
+                <Ionicons name="color-palette-outline" size={16} color={colors.primary} />
+                <Text style={styles.quickColorTitle}>Chọn nhanh màu trang phục</Text>
+              </View>
+              <Pressable onPress={() => setShowQuickColorPicker(false)} hitSlop={8}>
+                <Text style={styles.quickColorDoneText}>Xong</Text>
+              </Pressable>
+            </View>
+            <View style={styles.quickColorGrid}>
+              {COLOR_PALETTE.map((c) => {
+                const active = selectedColorId === c.id;
+                return (
+                  <Pressable
+                    key={`quick_${c.id}`}
+                    style={[styles.quickColorChip, active && styles.quickColorChipActive]}
+                    onPress={() => handleColorChange(c)}
+                  >
+                    <View
+                      style={[
+                        styles.quickColorSwatch,
+                        { backgroundColor: c.hex },
+                        c.border ? { borderWidth: 1, borderColor: c.border } : null,
+                      ]}
+                    />
+                    <Text
+                      style={[
+                        styles.quickColorName,
+                        active && styles.quickColorNameActive,
+                      ]}
+                    >
+                      {c.name}
+                    </Text>
+                  </Pressable>
+                );
+              })}
+            </View>
+          </View>
+        )}
 
         {/* BƯỚC 2: Chọn danh mục Áo, Quần, Váy, Giày (Chạm 2) */}
         <View style={styles.section}>
@@ -801,6 +881,88 @@ const styles = StyleSheet.create({
   colorDotActive: {
     borderWidth: 2.5,
     borderColor: colors.primary,
+  },
+
+  // Fallback Offline Banner & Quick Color Picker (Issue #19)
+  fallbackBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    backgroundColor: '#FFFBEB',
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: '#FDE68A',
+    paddingHorizontal: spacing.sm + 2,
+    paddingVertical: spacing.sm,
+  },
+  fallbackBannerText: {
+    flex: 1,
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#92400E',
+    lineHeight: 17,
+  },
+  quickColorCard: {
+    backgroundColor: colors.surfaceCard,
+    borderRadius: radius.md,
+    borderWidth: 1.5,
+    borderColor: colors.primary,
+    padding: spacing.sm + 2,
+    gap: spacing.sm,
+  },
+  quickColorHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  quickColorTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  quickColorTitle: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: colors.text,
+  },
+  quickColorDoneText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: colors.primary,
+  },
+  quickColorGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  quickColorChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: radius.full,
+    backgroundColor: colors.surfaceSubtle,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  quickColorChipActive: {
+    backgroundColor: '#F0F9FB',
+    borderColor: colors.primary,
+  },
+  quickColorSwatch: {
+    width: 14,
+    height: 14,
+    borderRadius: 7,
+  },
+  quickColorName: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: colors.textMuted,
+  },
+  quickColorNameActive: {
+    color: colors.primary,
+    fontWeight: '700',
   },
 
   // Alert
