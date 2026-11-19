@@ -1,4 +1,6 @@
-import os, sys, tempfile
+import os
+import sys
+import tempfile
 
 os.environ.setdefault("JWT_SECRET", "test-secret-test-secret-test-secret-32")
 os.environ.setdefault("GOOGLE_CLIENT_ID", "test-client")
