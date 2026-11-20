@@ -1,6 +1,11 @@
-import { WeatherData } from '../services/WeatherService';
-import { WardrobeItem } from '../types/item';
+import type { WeatherData } from '../services/WeatherService';
+import type { WardrobeItem } from '../types/item';
+import { daysAgo } from '../utils/eventDate';
 import { ColorHarmonyEngine, HSLColor } from './ColorHarmonyEngine';
+
+export const EVENT_CONTEXT = 'Sự kiện quan trọng';
+/** Món chưa mặc từ ngần này ngày thì được cộng điểm tái sử dụng (chỉ khi bộ đã đạt). */
+export const REUSE_AFTER_DAYS = 14;
 
 export interface DisplayItem {
   id: string | number;
@@ -12,7 +17,7 @@ export interface DisplayItem {
   isDbItem?: boolean;
 }
 
-export interface SuggestedOutfit {
+export interface LocalSuggestedOutfit {
   id: string;
   title: string;
   subtitle: string;
@@ -21,8 +26,17 @@ export interface SuggestedOutfit {
   harmonyScore?: number;
   harmonyBadge?: string;
   weatherAdvice?: string;
+  reasons: string[];
   items: DisplayItem[];
   score: number;
+}
+
+/** Mức trang trọng mong muốn theo bối cảnh (backlog mục 6). */
+export function targetFormality(context: string): number {
+  const c = (context || '').toLowerCase();
+  if (c.includes('sự kiện')) return 5;
+  if (c.includes('đi làm') || c.includes('công sở') || c.includes('hẹn hò')) return 3;
+  return 2; // đi học, đi chơi
 }
 
 export function calculateWeatherScore(item: DisplayItem, weather: WeatherData): number {
@@ -35,55 +49,26 @@ export function calculateWeatherScore(item: DisplayItem, weather: WeatherData): 
   const isHot = weather.temperature > 32;
 
   if (isColdOrRain) {
-    if (
-      nameLower.includes('khoác') ||
-      nameLower.includes('hoodie') ||
-      nameLower.includes('dài tay') ||
-      nameLower.includes('len') ||
-      nameLower.includes('cardigan') ||
-      nameLower.includes('vest')
-    ) {
-      score += 35;
-    }
-    if (cat === 'Quần' || nameLower.includes('jeans') || nameLower.includes('dài') || nameLower.includes('kaki')) {
-      score += 25;
-    }
+    if (['khoác', 'hoodie', 'dài tay', 'len', 'cardigan', 'vest'].some((k) => nameLower.includes(k))) score += 35;
+    if (cat === 'Quần' || ['jeans', 'dài', 'kaki'].some((k) => nameLower.includes(k))) score += 25;
     if (nameLower.includes('cộc') || nameLower.includes('ngắn tay') || ((cat === 'Váy' || cat === 'Đầm') && weather.isRaining)) {
       score -= 20;
     }
   } else if (isHot) {
-    if (
-      nameLower.includes('thun') ||
-      nameLower.includes('cộc tay') ||
-      nameLower.includes('ngắn tay') ||
-      nameLower.includes('lụa') ||
-      nameLower.includes('croptop') ||
-      nameLower.includes('phông')
-    ) {
-      score += 30;
-    }
-    if (nameLower.includes('short') || nameLower.includes('ngắn') || cat === 'Váy' || cat === 'Đầm') {
-      score += 20;
-    }
-    if (
-      colorLower.includes('trắng') ||
-      colorLower.includes('kem') ||
-      colorLower.includes('be') ||
-      colorLower.includes('hồng') ||
-      colorLower.includes('vàng')
-    ) {
+    if (['thun', 'cộc tay', 'ngắn tay', 'lụa', 'croptop', 'phông'].some((k) => nameLower.includes(k))) score += 30;
+    if (nameLower.includes('short') || nameLower.includes('ngắn') || cat === 'Váy' || cat === 'Đầm') score += 20;
+    // "be" phải khớp nguyên từ, tránh khớp nhầm trong các từ khác
+    if (['trắng', 'kem', 'hồng', 'vàng'].some((k) => colorLower.includes(k)) || /(^|\s)be(\s|$)/.test(colorLower)) {
       score += 15;
     }
-    if (nameLower.includes('khoác') || nameLower.includes('hoodie') || nameLower.includes('len')) {
-      score -= 40;
-    }
+    if (['khoác', 'hoodie', 'len'].some((k) => nameLower.includes(k))) score -= 40;
   } else {
     score += 10;
   }
-
   return score;
 }
 
+/** Điểm một món theo bối cảnh: nhãn bối cảnh + trừ điểm lệch trang trọng + từ khóa tên. */
 export function calculateItemContextScore(item: WardrobeItem, context: string): number {
   let score = 0;
   const nameLower = (item.name || '').toLowerCase();
@@ -91,86 +76,35 @@ export function calculateItemContextScore(item: WardrobeItem, context: string): 
   const colorLower = (item.color_name || '').toLowerCase();
   const formality = item.formality || 3;
   const ctxStr = (context || '').toLowerCase();
+  const isEvent = ctxStr.includes('sự kiện');
 
-  const rawCtxs = item.contexts ? item.contexts.split(',') : [];
-  const cleanCtxs = rawCtxs.map((c) => c.trim().toLowerCase());
-  const hasExplicitContext = cleanCtxs.some((c) => ctxStr.includes(c) || c.includes(ctxStr));
-
-  if (hasExplicitContext) {
-    score += 45;
-  } else if (cleanCtxs.length > 0 && !cleanCtxs.some((c) => c.includes('mọi dịp'))) {
-    score -= 25;
+  // Nhãn bối cảnh (sự kiện quan trọng không có nhãn riêng nên bỏ qua)
+  if (!isEvent) {
+    const cleanCtxs = (item.contexts ? item.contexts.split(',') : []).map((c) => c.trim().toLowerCase()).filter(Boolean);
+    const hasExplicit = cleanCtxs.some((c) => ctxStr.includes(c) || c.includes(ctxStr));
+    if (hasExplicit) score += 45;
+    else if (cleanCtxs.length > 0 && !cleanCtxs.some((c) => c.includes('mọi dịp'))) score -= 25;
   }
 
-  if (ctxStr.includes('đi làm') || ctxStr.includes('công sở')) {
-    if (formality === 3) score += 25;
-    else if (formality === 5) score += 30;
-    else if (formality === 1) score -= 35;
+  // Trang trọng: trừ điểm theo độ lệch so với mức mong muốn
+  score -= 8 * Math.abs(formality - targetFormality(context));
 
-    if (
-      nameLower.includes('sơ mi') ||
-      nameLower.includes('polo') ||
-      nameLower.includes('tây') ||
-      nameLower.includes('kaki') ||
-      nameLower.includes('âu') ||
-      nameLower.includes('vest') ||
-      nameLower.includes('blazer')
-    ) {
-      score += 35;
-    }
-    if (
-      nameLower.includes('croptop') ||
-      nameLower.includes('ba lỗ') ||
-      nameLower.includes('short') ||
-      nameLower.includes('rách') ||
-      nameLower.includes('ngắn')
-    ) {
-      score -= 45;
-    }
+  if (isEvent) {
+    if (cat === 'Đầm') score += 20;
+    if (['vest', 'blazer', 'sơ mi', 'tây', 'âu', 'loafer', 'giày tây', 'công sở'].some((k) => nameLower.includes(k))) score += 25;
+    if (['thun', 'phông', 'short', 'hoodie', 'ba lỗ', 'rách'].some((k) => nameLower.includes(k))) score -= 40;
+  } else if (ctxStr.includes('đi làm') || ctxStr.includes('công sở')) {
+    if (['sơ mi', 'polo', 'tây', 'kaki', 'âu', 'vest', 'blazer'].some((k) => nameLower.includes(k))) score += 35;
+    if (['croptop', 'ba lỗ', 'short', 'rách', 'ngắn'].some((k) => nameLower.includes(k))) score -= 45;
   } else if (ctxStr.includes('hẹn hò')) {
     if (cat === 'Đầm') score += 45;
     else if (cat === 'Váy') score += 30;
-
-    if (formality >= 3) score += 20;
-    else if (formality === 1) score -= 25;
-
-    if (
-      colorLower.includes('hồng') ||
-      colorLower.includes('kem') ||
-      colorLower.includes('đỏ') ||
-      colorLower.includes('pastel')
-    ) {
-      score += 20;
-    }
+    if (['hồng', 'kem', 'đỏ', 'pastel'].some((k) => colorLower.includes(k))) score += 20;
   } else if (ctxStr.includes('đi học')) {
-    if (formality <= 3) score += 25;
-    else score -= 35;
-
-    if (
-      nameLower.includes('thun') ||
-      nameLower.includes('phông') ||
-      nameLower.includes('sơ mi') ||
-      nameLower.includes('jeans') ||
-      nameLower.includes('sneaker')
-    ) {
-      score += 30;
-    }
+    if (['thun', 'phông', 'sơ mi', 'jeans', 'sneaker'].some((k) => nameLower.includes(k))) score += 30;
   } else if (ctxStr.includes('đi chơi')) {
-    if (formality <= 3) score += 30;
-    else score -= 30;
-
-    if (
-      nameLower.includes('thun') ||
-      nameLower.includes('phông') ||
-      nameLower.includes('croptop') ||
-      nameLower.includes('short') ||
-      nameLower.includes('jeans') ||
-      nameLower.includes('khoác')
-    ) {
-      score += 35;
-    }
+    if (['thun', 'phông', 'croptop', 'short', 'jeans', 'khoác'].some((k) => nameLower.includes(k))) score += 35;
   }
-
   return score;
 }
 
@@ -186,96 +120,143 @@ export function mapWardrobeItemToDisplay(dbItem: WardrobeItem): DisplayItem {
   };
 }
 
+const colorOf = (it: WardrobeItem): HSLColor => ({ h: it.color_h ?? 0, s: it.color_s ?? 0, l: it.color_l ?? 100 });
+
+const isDress = (it: WardrobeItem) =>
+  it.category === 'Đầm' || (it.category === 'Váy' && /đầm|dress/i.test(it.name || ''));
+const isTop = (it: WardrobeItem) => it.category === 'Áo' && !/khoác/i.test(it.name || '');
+const isBottom = (it: WardrobeItem) => it.category === 'Quần' || (it.category === 'Váy' && !isDress(it));
+const isShoe = (it: WardrobeItem) => it.category === 'Giày';
+
+function titleFor(context: string): string {
+  const c = context.toLowerCase();
+  if (c.includes('sự kiện')) return 'Chỉn chu cho sự kiện';
+  if (c.includes('đi làm')) return 'Chỉn chu công sở';
+  if (c.includes('hẹn hò')) return 'Cuốn hút hẹn hò';
+  if (c.includes('đi chơi')) return 'Phóng khoáng dạo phố';
+  return 'Năng động giảng đường';
+}
+
 /**
- * Gợi ý phối đồ Local-First: Chỉ sử dụng đồ thật từ tủ đồ SQLite của người dùng.
- * Bỏ hoàn toàn mockdata.
- * Đảm bảo: Đầm không đi cùng áo/quần. Váy/quần đi cùng áo.
+ * Gợi ý phối đồ local-first: Tổng = Màu + Trang trọng + Đồng bộ + Tái sử dụng (+ thời tiết).
+ * Đầm đi một mình (không áo/quần); áo + quần/váy; giày chọn theo độ hợp màu.
+ * Trả về toàn bộ tổ hợp, điểm giảm dần; bộ "xung đột màu" bị loại nếu còn lựa chọn khác.
  */
 export function generateOutfitSuggestions(
   dbItems: WardrobeItem[],
   contextName: string,
   weather: WeatherData,
-): SuggestedOutfit[] {
-  if (!dbItems || dbItems.length === 0) {
-    return [];
-  }
+  now: Date = new Date(),
+): LocalSuggestedOutfit[] {
+  if (!dbItems || dbItems.length === 0) return [];
 
-  const isDress = (it: WardrobeItem) =>
-    it.category === 'Đầm' ||
-    (it.category === 'Váy' && (it.name?.toLowerCase().includes('đầm') || it.name?.toLowerCase().includes('dress')));
-  const isTop = (it: WardrobeItem) =>
-    it.category === 'Áo' && !it.name?.toLowerCase().includes('khoác');
-  const isBottom = (it: WardrobeItem) => it.category === 'Quần' || (it.category === 'Váy' && !isDress(it));
-  const isShoe = (it: WardrobeItem) => it.category === 'Giày';
-
+  const target = targetFormality(contextName);
   const dresses = dbItems.filter(isDress);
   const tops = dbItems.filter(isTop);
   const bottoms = dbItems.filter(isBottom);
   const shoes = dbItems.filter(isShoe);
 
-  const candidates: SuggestedOutfit[] = [];
-
-  // 1. Phối Đầm (One-Piece)
-  for (const d of dresses) {
-    const displayD = mapWardrobeItemToDisplay(d);
-    const outfitItems = [displayD];
-    if (shoes.length > 0) {
-      outfitItems.push(mapWardrobeItemToDisplay(shoes[0]));
+  const staleOf = (items: WardrobeItem[]) => {
+    let best: { it: WardrobeItem; d: number } | null = null;
+    for (const it of items) {
+      const d = daysAgo(it.last_worn ?? it.created_at, now);
+      if (d !== null && d >= REUSE_AFTER_DAYS && (!best || d > best.d)) best = { it, d };
     }
+    return best;
+  };
+  const staleReason = (s: { it: WardrobeItem; d: number }) =>
+    `Tái sử dụng: ${s.it.name || s.it.category} ${s.it.last_worn ? `đã ${s.d} ngày chưa mặc` : 'chưa được mặc lần nào'}`;
+
+  const pickShoe = (main: WardrobeItem): WardrobeItem | null => {
+    let best: WardrobeItem | null = null;
+    let bestScore = -Infinity;
+    for (const s of shoes) {
+      const sc = ColorHarmonyEngine.evaluateHarmony(colorOf(main), colorOf(s)).score * 10 + calculateItemContextScore(s, contextName);
+      if (sc > bestScore) { best = s; bestScore = sc; }
+    }
+    return best;
+  };
+
+  const candidates: LocalSuggestedOutfit[] = [];
+
+  // 1. Đầm (one-piece)
+  for (const d of dresses) {
+    const dd = mapWardrobeItemToDisplay(d);
+    const shoe = pickShoe(d);
+    const parts = shoe ? [d, shoe] : [d];
+    const wScore = calculateWeatherScore(dd, weather);
+    const stale = staleOf(parts);
+    const reasons = ['Đầm liền gọn gàng, không cần phối thêm'];
+    if (Math.abs((d.formality || 3) - target) <= 1) reasons.push(`Độ lịch sự hợp ${contextName.toLowerCase()}`);
+    if (wScore > 10) reasons.push(`Hợp thời tiết hiện tại (${weather.temperature}°)`);
+    if (stale) reasons.push(staleReason(stale));
 
     candidates.push({
       id: `dress-${d.id}`,
-      title: `Duyên dáng ${displayD.name} · ${contextName}`,
-      subtitle: `Đầm liền ${displayD.colorName || ''} thanh lịch`,
+      title: `Duyên dáng ${dd.name} · ${contextName}`,
+      subtitle: `Đầm liền ${dd.colorName || ''} thanh lịch`.replace('  ', ' '),
       context: contextName,
       type: 'one_piece',
       harmonyScore: 3,
       harmonyBadge: '+3 Đầm liền',
       weatherAdvice: weather.recommendationAdvice,
-      items: outfitItems,
-      score: 50 + calculateItemContextScore(d, contextName) + calculateWeatherScore(displayD, weather),
+      reasons,
+      items: parts.map(mapWardrobeItemToDisplay),
+      score: 50 + 30 + calculateItemContextScore(d, contextName) + wScore + (stale ? 10 : 0),
     });
   }
 
-  // 2. Phối Áo + Quần/Váy (Two-Piece)
+  // 2. Áo + Quần/Váy (two-piece)
+  const shoeByBottom = new Map<number, WardrobeItem | null>();
   for (const top of tops) {
-    const displayTop = mapWardrobeItemToDisplay(top);
-    const topColor: HSLColor = { h: top.color_h ?? 0, s: top.color_s ?? 0, l: top.color_l ?? 100 };
-
+    const dTop = mapWardrobeItemToDisplay(top);
     for (const bot of bottoms) {
-      const displayBot = mapWardrobeItemToDisplay(bot);
-      const botColor: HSLColor = { h: bot.color_h ?? 0, s: bot.color_s ?? 0, l: bot.color_l ?? 100 };
+      const dBot = mapWardrobeItemToDisplay(bot);
+      const harmony = ColorHarmonyEngine.evaluateHarmony(colorOf(top), colorOf(bot));
 
-      const harmony = ColorHarmonyEngine.evaluateHarmony(topColor, botColor);
+      if (!shoeByBottom.has(bot.id)) shoeByBottom.set(bot.id, pickShoe(bot));
+      const shoe = shoeByBottom.get(bot.id) ?? null;
+      const parts = shoe ? [top, bot, shoe] : [top, bot];
 
-      const outfitItems = [displayTop, displayBot];
-      if (shoes.length > 0) {
-        outfitItems.push(mapWardrobeItemToDisplay(shoes[0]));
-      }
+      const fTop = top.formality || 3;
+      const fBot = bot.formality || 3;
+      const syncPenalty = -5 * Math.abs(fTop - fBot);
+      const wScore = calculateWeatherScore(dTop, weather) + calculateWeatherScore(dBot, weather);
+      const stale = harmony.score >= 2 ? staleOf(parts) : null; // chỉ cộng khi bộ đã đạt
 
       const score =
         50 +
         calculateItemContextScore(top, contextName) +
         calculateItemContextScore(bot, contextName) +
         harmony.score * 10 +
-        calculateWeatherScore(displayTop, weather) +
-        calculateWeatherScore(displayBot, weather);
+        syncPenalty +
+        wScore +
+        (stale ? 10 : 0);
+
+      const reasons = [harmony.title];
+      const dev = Math.abs(fTop - target) + Math.abs(fBot - target);
+      if (dev <= 2) reasons.push(`Độ lịch sự hợp ${contextName.toLowerCase()}`);
+      if (fTop === fBot) reasons.push('Áo và quần cùng mức trang trọng');
+      if (wScore > 20) reasons.push(`Hợp thời tiết hiện tại (${weather.temperature}°)`);
+      if (stale) reasons.push(staleReason(stale));
 
       candidates.push({
         id: `two-${top.id}-${bot.id}`,
-        title: `Năng động ${contextName.toLowerCase()}`,
-        subtitle: `${displayTop.colorName || 'Áo'} + ${displayBot.colorName || 'Quần'} · ${harmony.badgeText}`,
+        title: titleFor(contextName),
+        subtitle: `${dTop.colorName || 'Áo'} + ${dBot.colorName || 'Quần'} · ${harmony.badgeText}`,
         context: contextName,
         type: 'two_piece',
         harmonyScore: harmony.score,
         harmonyBadge: harmony.badgeText,
         weatherAdvice: weather.recommendationAdvice,
-        items: outfitItems,
+        reasons,
+        items: parts.map(mapWardrobeItemToDisplay),
         score,
       });
     }
   }
 
   candidates.sort((a, b) => b.score - a.score);
-  return candidates;
+  const good = candidates.filter((c) => c.harmonyScore !== -2);
+  return good.length > 0 ? good : candidates;
 }
