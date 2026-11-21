@@ -12,6 +12,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { colors, radius, spacing } from '../constants/theme';
 import { useAuthStore } from '../store/authStore';
+import { useWardrobeStore } from '../store/wardrobeStore';
 
 type ProfileModalProps = {
   visible: boolean;
@@ -20,6 +21,7 @@ type ProfileModalProps = {
 
 export default function ProfileModal({ visible, onClose }: ProfileModalProps) {
   const { email, name, busy, updateName, signOut } = useAuthStore();
+  const itemCount = useWardrobeStore((s) => s.items.length);
   const [editing, setEditing] = useState(false);
   const [newName, setNewName] = useState(name || '');
   const [saving, setSaving] = useState(false);
@@ -128,7 +130,7 @@ export default function ProfileModal({ visible, onClose }: ProfileModalProps) {
                 <Ionicons name="shirt-outline" size={17} color={colors.primary} />
                 <Text style={styles.infoLabel}>Tủ đồ của bạn</Text>
               </View>
-              <Text style={styles.infoValue}>7 món trang phục</Text>
+              <Text style={styles.infoValue}>{itemCount} món trang phục</Text>
             </View>
 
             <View style={styles.divider} />

@@ -1,6 +1,7 @@
 """Closy server: kiểm tra sống, đăng nhập Google, đăng ký & đăng nhập email, kiểm tra token, xử lý tách nền & màu sắc AI."""
 import base64
 import hashlib
+import hmac
 import io
 import json
 import os
@@ -19,6 +20,7 @@ from google.auth.transport import requests as grequests
 from google.oauth2 import id_token
 from PIL import Image
 from pydantic import BaseModel
+from starlette.concurrency import run_in_threadpool
 import rembg
 
 Image.MAX_IMAGE_PIXELS = 40_000_000  # chặn decompression bomb
@@ -39,6 +41,8 @@ GOOGLE_CLIENT_ID = os.environ["GOOGLE_CLIENT_ID"]
 DB_PATH = os.environ.get("DB_PATH", "closy.db")
 TOKEN_TTL = 7 * 24 * 3600  # 7 ngày
 MAX_IMAGE_SIZE = 20 * 1024 * 1024  # 20MB
+Image.MAX_IMAGE_PIXELS = 40_000_000  # chặn decompression bomb
+ALLOWED_ORIGINS = [o.strip() for o in os.environ.get("ALLOWED_ORIGINS", "*").split(",") if o.strip()]
 
 # Cấu hình AI Vision: Mô hình cục bộ Gemma 4 (Ollama) Local-First (Không cần Gemini API Key)
 OLLAMA_HOST = os.environ.get("OLLAMA_HOST", "http://host.docker.internal:11434")
@@ -79,8 +83,8 @@ def startup_event():
 # Cấu hình CORS cho phép client Web gọi API
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
+    allow_origins=ALLOWED_ORIGINS,
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -107,17 +111,36 @@ def get_db() -> sqlite3.Connection:
     return con
 
 
+PBKDF2_ITERS = 210_000
+
+# Rate-limit đăng nhập sai (in-memory, đủ cho 1 instance)
+_FAILS: dict[str, list[float]] = {}
+
+
+def _rate_check(key: str, limit: int = 5, window: int = 300):
+    now = time.time()
+    hits = [t for t in _FAILS.get(key, []) if now - t < window]
+    _FAILS[key] = hits
+    if len(hits) >= limit:
+        raise HTTPException(429, "Sai quá nhiều lần, vui lòng thử lại sau 5 phút")
+
+
 def hash_password(password: str) -> str:
     salt = secrets.token_hex(16)
-    h = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt.encode("utf-8"), 100000).hex()
-    return f"{salt}:{h}"
+    h = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt.encode("utf-8"), PBKDF2_ITERS).hex()
+    return f"pbkdf2${PBKDF2_ITERS}${salt}${h}"
 
 
 def verify_password(password: str, stored_hash: str) -> bool:
     try:
-        salt, h = stored_hash.split(":")
-        check = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt.encode("utf-8"), 100000).hex()
-        return h == check
+        if stored_hash.startswith("pbkdf2$"):
+            _, iters, salt, h = stored_hash.split("$")
+            iters = int(iters)
+        else:  # định dạng cũ salt:hash
+            salt, h = stored_hash.split(":")
+            iters = 100_000
+        check = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt.encode("utf-8"), iters).hex()
+        return hmac.compare_digest(h, check)
     except Exception:
         return False
 
@@ -187,6 +210,7 @@ def auth_login(body: LoginBody):
     email = body.email.strip().lower()
     if not email:
         raise HTTPException(400, "Vui lòng nhập email")
+    _rate_check(email)
 
     con = get_db()
     try:
@@ -197,7 +221,9 @@ def auth_login(body: LoginBody):
         con.close()
 
     if not user or not user["password_hash"] or not verify_password(body.password, user["password_hash"]):
+        _FAILS.setdefault(email, []).append(time.time())
         raise HTTPException(401, "Email hoặc mật khẩu không chính xác")
+    _FAILS.pop(email, None)
 
     expires_at = int(time.time()) + TOKEN_TTL
     token = jwt.encode({"uid": user["id"], "exp": expires_at}, JWT_SECRET, algorithm="HS256")
@@ -215,16 +241,29 @@ def auth_google(body: GoogleLogin):
     if info.get("email") and not info.get("email_verified", False):
         raise HTTPException(401, "Email Google chưa được xác minh")
 
+    sub = info["sub"]
+    g_email = (info.get("email") or "").strip().lower() or None
+
     con = get_db()
     try:
-        con.execute(
-            "INSERT OR IGNORE INTO users(google_sub, email, name, created_at) VALUES(?,?,?,?)",
-            (info["sub"], info.get("email"), info.get("name"), time.time()),
-        )
+        row = con.execute("SELECT id FROM users WHERE google_sub=?", (sub,)).fetchone()
+        if not row and g_email:
+            # Email đã đăng ký bằng mật khẩu: liên kết tài khoản (email Google đã được xác minh ở trên)
+            row = con.execute("SELECT id FROM users WHERE email=?", (g_email,)).fetchone()
+            if row:
+                con.execute(
+                    "UPDATE users SET google_sub=?, name=COALESCE(name, ?) WHERE id=?",
+                    (sub, info.get("name"), row["id"]),
+                )
+        if row:
+            uid = row["id"]
+        else:
+            cur = con.execute(
+                "INSERT INTO users(google_sub, email, name, created_at) VALUES(?,?,?,?)",
+                (sub, g_email, info.get("name"), time.time()),
+            )
+            uid = cur.lastrowid
         con.commit()
-        uid = con.execute(
-            "SELECT id FROM users WHERE google_sub=?", (info["sub"],)
-        ).fetchone()["id"]
     finally:
         con.close()
 
@@ -495,7 +534,7 @@ def classify_clothing_with_ollama(
                     "options": {"temperature": 0.1},
                 }
                 try:
-                    resp = requests.post(url, json=payload, timeout=30)
+                    resp = requests.post(url, json=payload, timeout=20)
                     if resp.status_code == 200:
                         data = resp.json()
                         response_text = data.get("response", "").strip()
@@ -553,6 +592,8 @@ def classify_clothing_with_ollama(
                                 if c in ["Đi học", "Đi làm", "Đi chơi", "Hẹn hò"]
                             ] or ["Đi học", "Đi làm"],
                         }
+                except requests.ConnectionError:
+                    break  # host không kết nối được, sang host kế tiếp
                 except Exception:
                     continue
     except Exception as e:
@@ -621,19 +662,21 @@ async def process_image(
     # 4. Tách bỏ phông nền bằng rembg
     try:
         session = get_rembg_session()
-        transparent_bytes = rembg.remove(raw_bytes, session=session)
+        transparent_bytes = await run_in_threadpool(rembg.remove, raw_bytes, session=session)
         transparent_image = Image.open(io.BytesIO(transparent_bytes))
     except Exception as e:
         raise HTTPException(500, f"Lỗi trong quá trình tách nền AI: {str(e)}")
 
     # 5. Trích xuất mã màu chủ đạo theo HSL & HEX
-    color_res = extract_colors_from_rgba(transparent_image)
+    color_res = await run_in_threadpool(extract_colors_from_rgba, transparent_image)
     primary = color_res["primary"]
     palette = color_res["palette"]
 
     # 6. Nhận diện danh mục, tên gợi ý, độ lịch sự và dịp mặc bằng AI
     # Ưu tiên 1: Mô hình đa phương thức cục bộ Gemma 4 e4b (Ollama Local-First)
-    classification = classify_clothing_with_ollama(raw_bytes, primary["name"], transparent_image)
+    classification = await run_in_threadpool(
+        classify_clothing_with_ollama, raw_bytes, primary["name"], transparent_image
+    )
 
     # Kiểm tra xem ảnh có phải trang phục để mặc hay không
     if classification and classification.get("is_clothing") is False:
@@ -905,7 +948,7 @@ def is_shoe_item(item: WardrobeItemPayload) -> bool:
 
 
 @app.post("/outfit/suggest")
-def suggest_outfits(body: OutfitSuggestRequest):
+def suggest_outfits(body: OutfitSuggestRequest, uid: int = Depends(current_user_id)):
     """Bộ máy gợi ý trang phục thông minh tại Backend (Backend Stylist Engine):
     - Đảm bảo quy tắc thời trang chặt chẽ:
       + ĐẦM (Dress): Trang phục liền thân độc lập, TUYỆT ĐỐI KHÔNG mặc chung Quần hay Áo (chỉ phối Giày hoặc Áo khoác ngoài khi trời lạnh).
@@ -916,6 +959,8 @@ def suggest_outfits(body: OutfitSuggestRequest):
     - Xếp hạng điểm số từ kho đồ người dùng thực tế.
     """
     raw_items = body.items
+    if len(raw_items) > 200:
+        raise HTTPException(413, "Tủ đồ quá lớn để gợi ý (tối đa 200 món)")
     context = body.context or "Đi học"
     weather = body.weather or WeatherPayload()
 
@@ -978,7 +1023,7 @@ def suggest_outfits(body: OutfitSuggestRequest):
                     harmony_score = hs
                     harmony_type = ht
                     break
-            outfit_items.insert(0, best_jacket)
+            outfit_items.append(best_jacket)  # đầm luôn là items[0]
             score += 25
 
         score += harmony_score * 10

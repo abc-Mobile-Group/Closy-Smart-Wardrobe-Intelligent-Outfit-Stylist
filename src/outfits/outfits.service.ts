@@ -22,7 +22,7 @@ export class OutfitsService {
         hint: 'Gọi POST /wardrobe/capsule-basics để nạp nhanh.',
       });
     }
-    const pool = this.wardrobe.all(userId).filter((i) => i.occasions.includes(dto.occasion));
+    const pool = this.wardrobe.all(userId).filter((i) => i.category === Category.SHOES || i.occasions.includes(dto.occasion));
     const locked = (dto.lockedItemIds || []).map((id) => this.wardrobe.get(id));
     const by = (c: Category) => pool.filter((i) => i.category === c);
     const hot = dto.weather ? dto.weather.tempC >= 30 : false;

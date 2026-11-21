@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import {
   ActivityIndicator,
+  Alert,
   Image,
   Pressable,
   ScrollView,
@@ -72,11 +73,11 @@ export default function LoginScreen() {
         {/* Form Fields */}
         <View style={styles.form}>
           <View style={styles.fieldGroup}>
-            <Text style={styles.fieldLabel}>Email / Số điện thoại</Text>
+            <Text style={styles.fieldLabel}>Email</Text>
             <View style={styles.inputContainer}>
               <TextInput
                 style={styles.input}
-                placeholder="Nhập email hoặc số điện thoại"
+                placeholder="Nhập email"
                 placeholderTextColor={colors.textLight}
                 value={emailOrPhone}
                 onChangeText={(t) => {
@@ -161,7 +162,7 @@ export default function LoginScreen() {
 
           <Pressable
             style={styles.socialBtn}
-            onPress={() => router.replace('/(tabs)/today')}
+            onPress={() => Alert.alert('Sắp có', 'Đăng nhập Apple sẽ có ở bản sau.')}
           >
             <Ionicons name="logo-apple" size={20} color="#000000" />
             <Text style={styles.socialBtnText}>Apple</Text>

@@ -88,6 +88,14 @@ export default function RootLayout() {
             animation: 'slide_from_right',
           }}
         />
+        <Stack.Screen
+          name="events"
+          options={{
+            headerShown: false,
+            contentStyle: { backgroundColor: colors.bg },
+            animation: 'slide_from_right',
+          }}
+        />
       </Stack>
       <ProfileModal visible={isProfileOpen} onClose={closeProfile} />
       {status === 'loading' && (

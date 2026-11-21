@@ -13,6 +13,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors, radius, spacing } from '../src/constants/theme';
 import { useWardrobeStore } from '../src/store/wardrobeStore';
 import { outfitHarmony, outfitSignature, swapOutfit } from '../src/engine/swap';
+import { HistoryService } from '../src/services/HistoryService';
 
 interface OutfitItemModel {
   id: string;
@@ -145,6 +146,8 @@ export default function OutfitDetailScreen() {
         return { text: 'Năng động dạo phố', icon: 'sunny-outline' as const };
       case 'Hẹn hò':
         return { text: 'Cuốn hút & lãng mạn', icon: 'heart-outline' as const };
+      case 'Sự kiện quan trọng':
+        return { text: 'Chỉn chu cho dịp quan trọng', icon: 'ribbon-outline' as const };
       case 'Đi học':
       default:
         return { text: 'Sẵn sàng đến lớp', icon: 'school-outline' as const };
@@ -181,8 +184,15 @@ export default function OutfitDetailScreen() {
   };
 
   // 7. Xác nhận mặc -> lưu lịch sử
-  const handleConfirmWear = () => {
-    router.replace('/(tabs)/history');
+  const handleConfirmWear = async () => {
+    const ids = currentItems.map((i) => Number(i.id)).filter((n) => Number.isFinite(n));
+    try {
+      await HistoryService.confirmWear(ids, currentContext);
+      await useWardrobeStore.getState().loadItems();
+      router.replace({ pathname: '/(tabs)/history', params: { saved: '1' } });
+    } catch (e) {
+      console.warn('[outfit-detail] Lưu lịch sử thất bại:', e);
+    }
   };
 
   return (

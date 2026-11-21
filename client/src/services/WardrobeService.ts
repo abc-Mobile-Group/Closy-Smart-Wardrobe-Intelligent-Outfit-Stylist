@@ -54,7 +54,9 @@ export class WardrobeService {
    * Xóa món đồ
    */
   static async deleteItem(id: number): Promise<void> {
-    return ItemRepository.delete(id);
+    const item = await ItemRepository.getById(id);
+    await ItemRepository.delete(id);
+    if (item) await FileRepository.deleteItemImage(item.image_path);
   }
 
   /**

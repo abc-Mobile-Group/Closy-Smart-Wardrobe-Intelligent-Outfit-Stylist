@@ -1,3 +1,4 @@
+import { describe, test, expect } from '@jest/globals';
 import { analyzeGaps, analyzeUsage } from '../src/services/InsightService';
 import { WardrobeItem } from '../src/types/item';
 

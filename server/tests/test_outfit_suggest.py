@@ -11,8 +11,16 @@ import main  # noqa: E402
 client = TestClient(main.app)
 
 
+def auth_headers():
+    creds = {"email": "suggest-test@x.com", "password": "12345678"}
+    r = client.post("/auth/register", json=creds)
+    if r.status_code != 200:  # đã đăng ký từ test trước
+        r = client.post("/auth/login", json=creds)
+    return {"Authorization": f"Bearer {r.json()['token']}"}
+
+
 def test_outfit_suggest_empty():
-    res = client.post("/outfit/suggest", json={"items": [], "context": "Đi học"})
+    res = client.post("/outfit/suggest", headers=auth_headers(), json={"items": [], "context": "Đi học"})
     assert res.status_code == 200
     data = res.json()
     assert data["success"] is True
@@ -40,6 +48,7 @@ def test_outfit_suggest_dress_standalone_and_two_piece():
 
     res = client.post(
         "/outfit/suggest",
+        headers=auth_headers(),
         json={
             "items": items,
             "context": "Đi học",
@@ -82,6 +91,7 @@ def test_weather_adaptive_recommendation():
     # Trời lạnh 16 độ C
     res_cold = client.post(
         "/outfit/suggest",
+        headers=auth_headers(),
         json={
             "items": items,
             "context": "Đi học",
@@ -105,19 +115,19 @@ def test_occasion_differentiation():
     ]
 
     # 1. Đi làm -> Áo sơ mi + Quần jeans (lịch sự vừa 3, có nhãn Đi làm)
-    res_work = client.post("/outfit/suggest", json={"items": items, "context": "Đi làm"}).json()
+    res_work = client.post("/outfit/suggest", headers=auth_headers(), json={"items": items, "context": "Đi làm"}).json()
     top_work = res_work["outfits"][0]
     work_items = [it["name"] for it in top_work["items"]]
     assert "Áo sơ mi xanh ô liu" in work_items, f"Đi làm phải ưu tiên sơ mi, nhưng ra: {work_items}"
 
     # 2. Hẹn hò -> Đầm hồng pastel (Đầm duyên dáng cho buổi hẹn)
-    res_date = client.post("/outfit/suggest", json={"items": items, "context": "Hẹn hò"}).json()
+    res_date = client.post("/outfit/suggest", headers=auth_headers(), json={"items": items, "context": "Hẹn hò"}).json()
     top_date = res_date["outfits"][0]
     assert top_date["type"] == "one_piece", "Hẹn hò phải ưu tiên đầm duyên dáng"
     assert "Đầm hồng pastel" in [it["name"] for it in top_date["items"]]
 
     # 3. Đi chơi -> Áo phông in đồ họa hoặc Đầm dạo phố
-    res_play = client.post("/outfit/suggest", json={"items": items, "context": "Đi chơi"}).json()
+    res_play = client.post("/outfit/suggest", headers=auth_headers(), json={"items": items, "context": "Đi chơi"}).json()
     top_play = res_play["outfits"][0]
     play_items = [it["name"] for it in top_play["items"]]
     assert "Áo phông in đồ họa" in play_items or "Đầm hồng pastel" in play_items

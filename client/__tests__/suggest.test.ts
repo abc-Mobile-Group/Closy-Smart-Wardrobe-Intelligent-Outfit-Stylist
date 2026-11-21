@@ -1,3 +1,4 @@
+import { describe, test, expect } from '@jest/globals';
 import { EVENT_CONTEXT, generateOutfitSuggestions, targetFormality } from '../src/engine/suggest';
 import { WardrobeItem } from '../src/types/item';
 

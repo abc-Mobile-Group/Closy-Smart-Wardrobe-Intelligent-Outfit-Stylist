@@ -1,3 +1,4 @@
+import { describe, test, expect } from '@jest/globals';
 import { ColorHarmonyEngine as E } from '../src/engine/ColorHarmonyEngine';
 
 describe('ColorHarmonyEngine', () => {
