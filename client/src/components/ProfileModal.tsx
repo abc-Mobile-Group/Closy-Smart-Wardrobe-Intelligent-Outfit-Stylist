@@ -14,10 +14,12 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { colors, radius, spacing } from '../constants/theme';
 import { useAuthStore } from '../store/authStore';
+import { useWardrobeStore } from '../store/wardrobeStore';
 import {
   MorningNotificationSettings,
   NotificationService,
 } from '../services/NotificationService';
+import { BackupService, InspectedBackup } from '../services/BackupService';
 
 type ProfileModalProps = {
   visible: boolean;
@@ -39,11 +41,21 @@ export default function ProfileModal({ visible, onClose }: ProfileModalProps) {
   const [notifFeedback, setNotifFeedback] = useState<string | null>(null);
   const [showPermissionPrompt, setShowPermissionPrompt] = useState(false);
 
+  // Issue #28: Sao lưu & Khôi phục dữ liệu tủ đồ (.closy / .json)
+  const [backupBusy, setBackupBusy] = useState(false);
+  const [backupFeedback, setBackupFeedback] = useState<{
+    type: 'success' | 'error';
+    message: string;
+  } | null>(null);
+  const [pendingRestore, setPendingRestore] = useState<InspectedBackup | null>(null);
+
   useEffect(() => {
     if (!visible) return;
     let active = true;
     setNotifFeedback(null);
     setShowPermissionPrompt(false);
+    setBackupFeedback(null);
+    setPendingRestore(null);
     NotificationService.getSettings().then((saved) => {
       if (active) setNotifSettings(saved);
     });
@@ -107,6 +119,74 @@ export default function ProfileModal({ visible, onClose }: ProfileModalProps) {
       setNotifFeedback(
         `Đã chọn khung giờ ${NotificationService.formatTime(hour, minute)}. Bật công tắc để nhận nhắc nhở hàng ngày.`,
       );
+    }
+  };
+
+  // Issue #28: Xuất bản sao lưu .closy và mở bảng chia sẻ hệ thống
+  const handleBackupWardrobe = async () => {
+    if (backupBusy) return;
+    setBackupBusy(true);
+    setBackupFeedback(null);
+    setPendingRestore(null);
+    try {
+      const result = await BackupService.exportAndShareBackup();
+      setBackupFeedback({
+        type: 'success',
+        message: `Đã sao lưu ${result.metadata.counts.items} món đồ và ${result.metadata.counts.images} tệp ảnh (${result.fileName}).`,
+      });
+    } catch (e: any) {
+      setBackupFeedback({
+        type: 'error',
+        message: e?.message || 'Không thể tạo tệp sao lưu tủ đồ.',
+      });
+    } finally {
+      setBackupBusy(false);
+    }
+  };
+
+  // Issue #28: Chọn tệp sao lưu .closy / .json và kiểm tra toàn vẹn (Checksum / Version)
+  const handlePickRestoreFile = async () => {
+    if (backupBusy) return;
+    setBackupBusy(true);
+    setBackupFeedback(null);
+    setPendingRestore(null);
+    try {
+      const inspected = await BackupService.pickAndInspectBackup();
+      if (!inspected) {
+        return;
+      }
+      // Mở hộp thông báo xác nhận an toàn trước khi ghi đè dữ liệu
+      setPendingRestore(inspected);
+    } catch (e: any) {
+      setBackupFeedback({
+        type: 'error',
+        message: e?.message || 'Tệp sao lưu không hợp lệ hoặc đã bị hỏng.',
+      });
+    } finally {
+      setBackupBusy(false);
+    }
+  };
+
+  // Issue #28: Xác nhận ghi đè dữ liệu & giải nén ảnh + nạp lại SQLite
+  const handleConfirmRestore = async () => {
+    if (!pendingRestore || backupBusy) return;
+    setBackupBusy(true);
+    setBackupFeedback(null);
+    try {
+      const summary = await BackupService.restoreFromInspectedBackup(pendingRestore);
+      await useWardrobeStore.getState().loadItems();
+      setPendingRestore(null);
+      setBackupFeedback({
+        type: 'success',
+        message: `Khôi phục thành công ${summary.itemsRestored} món đồ, ${summary.historyRestored + summary.outfitsRestored} nhật ký mặc đồ và ${summary.imagesRestored} tệp ảnh.`,
+      });
+    } catch (e: any) {
+      setBackupFeedback({
+        type: 'error',
+        message: e?.message || 'Khôi phục dữ liệu thất bại. Dữ liệu cũ vẫn được bảo vệ.',
+      });
+    } finally {
+      setBackupBusy(false);
     }
   };
 
@@ -314,6 +394,97 @@ export default function ProfileModal({ visible, onClose }: ProfileModalProps) {
 
             {!!notifFeedback && (
               <Text style={styles.notifFeedbackText}>{notifFeedback}</Text>
+            )}
+          </View>
+
+          {/* Issue #28: Sao lưu & Khôi phục dữ liệu Tủ đồ (Local-First) */}
+          <View style={styles.backupCard}>
+            <View style={styles.backupHeader}>
+              <Ionicons name="archive-outline" size={17} color={colors.primary} />
+              <View style={styles.notifTextCol}>
+                <Text style={styles.notifTitle}>Sao lưu & Khôi phục tủ đồ</Text>
+                <Text style={styles.notifSubtitle}>
+                  Đóng gói SQLite + ảnh (.closy) để chuyển máy an toàn
+                </Text>
+              </View>
+            </View>
+
+            <View style={styles.backupActionsRow}>
+              <Pressable
+                style={[styles.backupPrimaryBtn, backupBusy && styles.backupBtnDisabled]}
+                onPress={handleBackupWardrobe}
+                disabled={backupBusy}
+              >
+                {backupBusy && !pendingRestore ? (
+                  <ActivityIndicator size="small" color="#FFFFFF" />
+                ) : (
+                  <>
+                    <Ionicons name="cloud-upload-outline" size={15} color="#FFFFFF" />
+                    <Text style={styles.backupPrimaryText}>Sao lưu tủ đồ</Text>
+                  </>
+                )}
+              </Pressable>
+
+              <Pressable
+                style={[styles.backupSecondaryBtn, backupBusy && styles.backupBtnDisabled]}
+                onPress={handlePickRestoreFile}
+                disabled={backupBusy}
+              >
+                <Ionicons name="cloud-download-outline" size={15} color={colors.primary} />
+                <Text style={styles.backupSecondaryText}>Khôi phục dữ liệu</Text>
+              </Pressable>
+            </View>
+
+            {/* Thông báo xác nhận an toàn trước khi ghi đè dữ liệu (Issue #28) */}
+            {pendingRestore && (
+              <View style={styles.restoreConfirmBox}>
+                <View style={styles.restoreConfirmHeader}>
+                  <Ionicons name="warning-outline" size={16} color="#B45309" />
+                  <Text style={styles.restoreConfirmTitle}>
+                    Xác nhận ghi đè dữ liệu tủ đồ?
+                  </Text>
+                </View>
+                <Text style={styles.restoreConfirmDesc}>
+                  Tệp: {pendingRestore.fileName} (v{pendingRestore.document.metadata.version} · Đã xác thực Checksum)
+                  {'\n'}Nội dung: {pendingRestore.document.metadata.counts.items} món đồ,{' '}
+                  {pendingRestore.document.metadata.counts.images} ảnh,{' '}
+                  {pendingRestore.document.metadata.counts.history +
+                    pendingRestore.document.metadata.counts.outfits}{' '}
+                  nhật ký mặc đồ.
+                  {'\n'}Toàn bộ dữ liệu tủ đồ hiện tại trên máy sẽ được thay thế bằng bản sao lưu này.
+                </Text>
+                <View style={styles.permissionActions}>
+                  <Pressable
+                    style={styles.permissionDeclineBtn}
+                    onPress={() => setPendingRestore(null)}
+                    disabled={backupBusy}
+                  >
+                    <Text style={styles.permissionDeclineText}>Hủy</Text>
+                  </Pressable>
+                  <Pressable
+                    style={styles.restoreConfirmBtn}
+                    onPress={handleConfirmRestore}
+                    disabled={backupBusy}
+                  >
+                    {backupBusy ? (
+                      <ActivityIndicator size="small" color="#FFFFFF" />
+                    ) : (
+                      <Text style={styles.restoreConfirmBtnText}>Xác nhận khôi phục</Text>
+                    )}
+                  </Pressable>
+                </View>
+              </View>
+            )}
+
+            {backupFeedback && (
+              <Text
+                style={[
+                  styles.backupFeedbackText,
+                  backupFeedback.type === 'error' && styles.backupFeedbackError,
+                ]}
+              >
+                {backupFeedback.message}
+              </Text>
             )}
           </View>
 
@@ -656,6 +827,102 @@ const styles = StyleSheet.create({
     fontSize: 11,
     color: colors.primary,
     lineHeight: 15,
+  },
+  // Issue #28: Backup & Restore section
+  backupCard: {
+    backgroundColor: colors.surfaceCard,
+    borderRadius: radius.lg,
+    padding: spacing.md,
+    gap: spacing.sm,
+  },
+  backupHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  backupActionsRow: {
+    flexDirection: 'row',
+    gap: spacing.xs + 2,
+  },
+  backupPrimaryBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 5,
+    paddingVertical: 9,
+    paddingHorizontal: 8,
+    borderRadius: radius.md,
+    backgroundColor: colors.primary,
+  },
+  backupPrimaryText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#FFFFFF',
+  },
+  backupSecondaryBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 5,
+    paddingVertical: 9,
+    paddingHorizontal: 8,
+    borderRadius: radius.md,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: colors.primary,
+  },
+  backupSecondaryText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: colors.primary,
+  },
+  backupBtnDisabled: {
+    opacity: 0.6,
+  },
+  restoreConfirmBox: {
+    backgroundColor: '#FFFBEB',
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: '#FDE68A',
+    padding: spacing.sm + 2,
+    gap: spacing.xs + 2,
+  },
+  restoreConfirmHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  restoreConfirmTitle: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#92400E',
+  },
+  restoreConfirmDesc: {
+    fontSize: 11,
+    color: '#78350F',
+    lineHeight: 16,
+  },
+  restoreConfirmBtn: {
+    paddingHorizontal: 12,
+    paddingVertical: 5,
+    borderRadius: radius.md,
+    backgroundColor: '#D97706',
+  },
+  restoreConfirmBtnText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#FFFFFF',
+  },
+  backupFeedbackText: {
+    fontSize: 11,
+    color: colors.success,
+    lineHeight: 16,
+    fontWeight: '600',
+  },
+  backupFeedbackError: {
+    color: colors.danger,
   },
   footerSection: {
     marginTop: spacing.xs,
