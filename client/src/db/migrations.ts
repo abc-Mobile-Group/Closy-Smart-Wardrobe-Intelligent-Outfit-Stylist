@@ -32,6 +32,18 @@ const MIGRATIONS: string[] = [
      created_at TEXT NOT NULL DEFAULT (datetime('now'))
    );
    CREATE INDEX idx_history_date ON history(worn_date);`,
+
+  // v4: sự kiện đã lên lịch (UC7)
+  `CREATE TABLE planned_events (
+     id         INTEGER PRIMARY KEY AUTOINCREMENT,
+     date       TEXT NOT NULL,                       -- YYYY-MM-DD
+     type       TEXT NOT NULL,
+     note       TEXT NOT NULL DEFAULT '',
+     context    TEXT NOT NULL DEFAULT 'Sự kiện quan trọng',
+     remind_at  TEXT,                                -- chưa dùng: dành cho thông báo (xem docs/NOTIFICATIONS.md)
+     created_at TEXT NOT NULL DEFAULT (datetime('now'))
+   );
+   CREATE INDEX idx_events_date ON planned_events(date);`,
 ];
 
 export async function migrate(db: SQLiteDatabase): Promise<void> {

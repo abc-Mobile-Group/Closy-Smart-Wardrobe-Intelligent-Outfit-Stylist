@@ -1,0 +1,10 @@
+1) Chép đè vào repo (giữ đúng đường dẫn):
+   README.md  (README NestJS cũ đã được cleanup.sh của gói trước chuyển vào demo-nestjs/; nếu chưa chạy cleanup thì chạy trước)
+   docs/APK.md, docs/BENCHMARK.md
+   server/scripts/benchmark_process.py
+   client/__tests__/colorHarmony.test.ts, client/__tests__/swap.test.ts
+2) python apply_patches2.py       (màn Tủ đồ trống có nút "Thêm món đầu tiên", script test, bước npm test trong CI)
+3) cd client && npx expo install jest-expo jest @types/jest   (chọn đúng phiên bản theo SDK)
+   npm test
+4) Đo: chuẩn bị ~10 ảnh đồ thật trong ./sample_photos, chạy benchmark_process.py, dán kết quả vào docs/BENCHMARK.md
+5) Thiết lập named tunnel theo README.md, build APK theo docs/APK.md, tick checklist cuối docs/APK.md trên máy sạch.

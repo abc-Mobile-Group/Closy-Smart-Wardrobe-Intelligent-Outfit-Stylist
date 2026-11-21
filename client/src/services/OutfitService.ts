@@ -1,7 +1,6 @@
-import { outfitApi, SuggestedOutfitDTO } from '../api/endpoints';
 import { WardrobeItem } from '../types/item';
 import { WeatherData } from './WeatherService';
-import { generateOutfitSuggestions } from '../engine/suggest';
+import { generateOutfitSuggestions, LocalSuggestedOutfit } from '../engine/suggest';
 
 export interface DisplayOutfitItem {
   id: string | number;
@@ -22,14 +21,65 @@ export interface SuggestedOutfit {
   harmonyBadge: string;
   harmonyTitle: string;
   weatherAdvice?: string;
+  reasons: string[];
   items: DisplayOutfitItem[];
   score: number;
 }
 
+const toSuggested = (
+  s: LocalSuggestedOutfit,
+  idx: number,
+  context: string,
+  weather: WeatherData,
+): SuggestedOutfit => ({
+  id: s.id || `local-${idx + 1}`,
+  title: s.title,
+  subtitle: s.subtitle,
+  context,
+  type: s.type || 'two_piece',
+  harmonyScore: s.harmonyScore ?? 3,
+  harmonyBadge: s.harmonyBadge || '+3 Phối đẹp',
+  harmonyTitle: s.reasons[0] || 'Phối màu thông minh',
+  weatherAdvice: weather.recommendationAdvice,
+  reasons: s.reasons,
+  items: s.items.map((it) => ({
+    id: it.id,
+    name: it.name,
+    category: it.category,
+    colorName: it.colorName,
+    colorHex: it.colorHex,
+    image: it.image,
+  })),
+  score: s.score,
+});
+
+const sig = (o: LocalSuggestedOutfit) => o.items.map((i) => String(i.id)).sort().join('+');
+const coreIds = (o: LocalSuggestedOutfit) => o.items.filter((i) => i.category !== 'Giày').map((i) => String(i.id));
+
+/** Chọn tối đa n bộ: ưu tiên các bộ không trùng áo/quần/đầm với bộ đã chọn, thiếu thì lấp bằng bộ điểm cao kế tiếp. */
+export function pickDiverse(sorted: LocalSuggestedOutfit[], n = 3): LocalSuggestedOutfit[] {
+  const picked: LocalSuggestedOutfit[] = [];
+  const used = new Set<string>();
+  for (const o of sorted) {
+    if (picked.length >= n) break;
+    if (coreIds(o).some((id) => used.has(id))) continue;
+    picked.push(o);
+    coreIds(o).forEach((id) => used.add(id));
+  }
+  const seen = new Set(picked.map(sig));
+  for (const o of sorted) {
+    if (picked.length >= n) break;
+    if (seen.has(sig(o))) continue;
+    picked.push(o);
+    seen.add(sig(o));
+  }
+  return picked.sort((a, b) => b.score - a.score);
+}
+
 export class OutfitService {
   /**
-   * Gọi Backend POST /outfit/suggest. Lỗi mạng/backend -> fallback engine local.
-   * Không gửi ảnh lên server (data URL base64 rất nặng); ảnh lấy lại từ tủ đồ local.
+   * Local-first (quyết định #5 của backlog): engine chạy hoàn toàn trên máy,
+   * không gửi dữ liệu tủ đồ lên server, chạy được offline.
    */
   static async getSuggestions(
     items: WardrobeItem[],
@@ -37,84 +87,20 @@ export class OutfitService {
     weather: WeatherData,
   ): Promise<SuggestedOutfit[]> {
     if (!items || items.length === 0) return [];
+    const all = generateOutfitSuggestions(items, contextName, weather);
+    return pickDiverse(all, 3).map((s, i) => toSuggested(s, i, contextName, weather));
+  }
 
-    const byId = new Map(items.map((i) => [String(i.id), i]));
-
-    try {
-      const payloadItems = items.map((it) => ({
-        id: it.id,
-        name: it.name || `${it.category} ${it.color_name || ''}`.trim(),
-        category: it.category,
-        color_h: it.color_h ?? 0,
-        color_s: it.color_s ?? 0,
-        color_l: it.color_l ?? 100,
-        color_hex: it.color_hex,
-        color_name: it.color_name,
-        formality: it.formality ?? 3,
-        contexts: it.contexts ? it.contexts.split(',') : [],
-      }));
-
-      const weatherPayload = {
-        temperature: weather.temperature,
-        weather_code: weather.weatherCode,
-        is_raining: weather.isRaining,
-        location_name: weather.locationName,
-        condition_description: weather.conditionDescription,
-        recommendation_advice: weather.recommendationAdvice,
-      };
-
-      const response = await outfitApi.suggest({
-        items: payloadItems,
-        context: contextName,
-        weather: weatherPayload,
-      });
-
-      if (response && response.success && response.outfits && response.outfits.length > 0) {
-        return response.outfits.map((dto: SuggestedOutfitDTO, index: number) => ({
-          id: `outfit-${index + 1}`,
-          title: dto.title,
-          subtitle: dto.subtitle,
-          context: contextName,
-          type: dto.type,
-          harmonyScore: dto.harmony_score,
-          harmonyBadge: dto.harmony_badge,
-          harmonyTitle: dto.harmony_title,
-          weatherAdvice: response.weather_advice || weather.recommendationAdvice,
-          score: dto.score,
-          items: dto.items.map((it) => ({
-            id: it.id,
-            name: it.name,
-            category: it.category,
-            colorName: it.color_name,
-            colorHex: it.color_hex,
-            image: { uri: byId.get(String(it.id))?.image_path ?? '' },
-          })),
-        }));
-      }
-    } catch (apiError) {
-      console.warn('[OutfitService] Lỗi gọi Backend gợi ý, kích hoạt Local-First fallback:', apiError);
-    }
-
-    const localSuggestions = generateOutfitSuggestions(items, contextName, weather);
-    return localSuggestions.map((s, idx) => ({
-      id: `local-${idx + 1}`,
-      title: s.title,
-      subtitle: s.subtitle,
-      context: contextName,
-      type: s.type || 'two_piece',
-      harmonyScore: s.harmonyScore || 3,
-      harmonyBadge: s.harmonyBadge || '+3 Phối đẹp',
-      harmonyTitle: 'Phối màu thông minh',
-      weatherAdvice: weather.recommendationAdvice,
-      items: s.items.map((it) => ({
-        id: it.id,
-        name: it.name,
-        category: it.category,
-        colorName: it.colorName,
-        colorHex: it.colorHex,
-        image: it.image,
-      })),
-      score: s.score,
-    }));
+  /** Bộ điểm cao nhất có chứa món itemId (dùng cho "Phối ngay" ở màn Thống kê). */
+  static async findOutfitWith(
+    items: WardrobeItem[],
+    itemId: number | string,
+    contextName: string,
+    weather: WeatherData,
+  ): Promise<SuggestedOutfit | null> {
+    const found = generateOutfitSuggestions(items, contextName, weather).find((o) =>
+      o.items.some((i) => String(i.id) === String(itemId)),
+    );
+    return found ? toSuggested(found, 0, contextName, weather) : null;
   }
 }
