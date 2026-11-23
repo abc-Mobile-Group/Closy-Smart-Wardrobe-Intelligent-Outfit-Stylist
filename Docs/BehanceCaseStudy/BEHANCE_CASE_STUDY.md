@@ -1,5 +1,6 @@
 # Behance Product Design Case Study — Closy
 
+> **Link Behance công khai (Public):** https://www.behance.net/gallery/258882835/Closy-Smart-Wardrobe-Intelligent-Outfit-Stylist  
 > **Mục đích:** Bản biên tập nội dung kể chuyện trực quan (Visual Storytelling) sẵn sàng đăng công khai (**Public**) trên **Behance** cho **Mục 6 (Trọng số: 5%)**.  
 > **Nguyên tắc biên tập:** Viết mới hoàn toàn theo giọng văn Product Design Case Study (ngắn gọn, tập trung insight & quyết định thiết kế, **không sao chép nguyên văn bảng dài từ GitHub Wiki**, hạn chế chi tiết trang trí thừa).  
 > **Thư mục ảnh đính kèm sẵn:** `Docs/BehanceCaseStudy/images/` (đã có đủ 9 ảnh PNG sắc nét từ `01` đến `09`; chỉ cần export thêm 1 ảnh frame `Closy Design System` từ Figma nếu muốn chèn bảng Design System nguyên tấm).
@@ -102,12 +103,12 @@ Closy sử dụng phong cách **tối giản, nền sáng sạch sẽ** để **
 
 ---
 
-## 7. Các màn hình chính (Key Screens)
+## 7. Các màn hình chính (9 Key Screens)
 
-> **Gợi ý bố cục Behance:** Trình bày dạng lưới 2–3 màn hình mỗi hàng từ thư mục `Docs/BehanceCaseStudy/images/`, mỗi màn chỉ kèm 1 chú thích ngắn 1–2 dòng (không viết tường thuật dài).
+> **Gợi ý bố cục Behance:** Trình bày đủ 9 màn hình của Closy dạng lưới 3 màn hình mỗi hàng từ thư mục `Docs/BehanceCaseStudy/images/`, mỗi nhóm kèm 1 chú thích ngắn 1–2 dòng (không viết tường thuật dài).
 
-1. **Khởi đầu nhẹ nhàng (`01-onboarding.png`)**  
-   Giới thiệu nhanh giá trị sản phẩm và mở lối vào tạo tủ đồ chỉ từ 5–7 món cơ bản.
+1. **Đăng ký (`00a-register.png`), Đăng nhập (`00b-login.png`) & Khởi đầu (`01-onboarding.png`)**  
+   Tạo tài khoản nhanh bằng Email hoặc Google, giữ phiên an toàn và giới thiệu lộ trình khởi tạo tủ đồ nhẹ nhàng chỉ từ 5–7 món cơ bản.
 2. **Màn hình Hôm nay (`02-today.png`)**  
    Chọn bối cảnh trong 1 chạm (*Đi học, Đi làm, Đi chơi, Hẹn hò*), xem nhanh thời tiết tham khảo và thẻ nhắc *"Lâu rồi chưa mặc nhỉ?"*.
 3. **Tủ đồ cá nhân (`03-wardrobe.png`) & Thêm món đồ (`04-add-item.png`)**  
