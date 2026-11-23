@@ -80,7 +80,9 @@ Toàn bộ 2 cải tiến được dựng thành trang riêng **`Usability Itera
   2. Tăng kích thước & độ tương phản văn bản lý do (**`12px Regular` → `13px Medium`, màu `#0F172A`, `line-height: 19px`**), bổ sung 2 tag quét nhanh: **`★ +3 Trung tính hài hòa`** và **`26°C · Thoải mái đi học`**.
   3. Nâng cấp lý do ở 2 thẻ gợi ý thay thế bên dưới từ dòng text `10px` thành **pill badge `11px Semi Bold`** trên nền `#E6F4F6`.
 
-![Đối chiếu Before/After — Cải tiến 1: Làm nổi bật Lý do gợi ý bộ đồ (UT02)](./images/compare-ut02-before-after.png)
+| Before (Trước cải tiến) | After (Sau cải tiến) |
+| :---: | :---: |
+| <img src="./images/before-ut02-suggest.png" width="320" alt="Before UT02 — Gợi ý phối đồ đi học"> | <img src="./images/after-ut02-suggest.png" width="320" alt="After UT02 — Gợi ý phối đồ đi học"> |
 
 ---
 
@@ -91,7 +93,9 @@ Toàn bộ 2 cải tiến được dựng thành trang riêng **`Usability Itera
   2. Nâng cấp thẻ *"Mẫu cơ bản"* thành **`Kho mẫu (30+)`** kèm chú thích nổi bật: *"Hỗ trợ chụp trực tiếp, ảnh TMĐT & kho 30+ mẫu (Áo, Quần, Váy, Đầm, Giày)"*.
   3. Thêm **hàng chip chọn nhanh 5 danh mục (`Áo`, `Quần`, `Váy`, `Đầm`, `Giày`)** ngay dưới ô *Loại đồ* để nhập đa dạng loại trang phục chỉ với 1 chạm (đồng bộ với mã nguồn app).
 
-![Đối chiếu Before/After — Cải tiến 2: Hướng dẫn 3 bước & Kho đồ đa dạng (UT01)](./images/compare-ut01-before-after.png)
+| Before (Trước cải tiến) | After (Sau cải tiến) |
+| :---: | :---: |
+| <img src="./images/before-ut01-add-item.png" width="320" alt="Before UT01 — Thêm món đồ"> | <img src="./images/after-ut01-add-item.png" width="320" alt="After UT01 — Thêm món đồ"> |
 
 ---
 
