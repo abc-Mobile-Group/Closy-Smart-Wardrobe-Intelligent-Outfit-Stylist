@@ -30,3 +30,4 @@ jobs:
           node-version: 20
       - run: npm ci
       - run: npx tsc --noEmit
+      - run: npm test -- --ci

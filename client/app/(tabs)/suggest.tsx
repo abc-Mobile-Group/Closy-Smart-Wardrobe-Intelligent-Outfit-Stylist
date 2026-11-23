@@ -37,7 +37,9 @@ export default function SuggestScreen() {
   );
 
   useEffect(() => {
-    WeatherService.getCurrentWeather().then(setWeather).catch(() => {});
+    WeatherService.getCurrentWeather()
+      .then((data) => setWeather((prev) => (JSON.stringify(prev) === JSON.stringify(data) ? prev : data)))
+      .catch(() => {});
   }, []);
 
   // Lấy danh sách gợi ý từ Backend Stylist Engine (Local-First fallback)
@@ -150,7 +152,14 @@ export default function SuggestScreen() {
                         {mainOutfit.items[1] && (
                           <Image
                             source={mainOutfit.items[1].image}
-                            style={styles.collageSingleLeft}
+                            style={styles.collageTopLeft}
+                            resizeMode="contain"
+                          />
+                        )}
+                        {mainOutfit.items[2] && (
+                          <Image
+                            source={mainOutfit.items[2].image}
+                            style={styles.collageBottomLeft}
                             resizeMode="contain"
                           />
                         )}
@@ -195,6 +204,16 @@ export default function SuggestScreen() {
               <View style={styles.outfitInfo}>
                 <Text style={styles.outfitTitle}>{mainOutfit.title}</Text>
                 <Text style={styles.outfitDesc}>{mainOutfit.subtitle}</Text>
+                {mainOutfit.reasons && mainOutfit.reasons.length > 0 && (
+                  <View style={styles.reasonBox}>
+                    {mainOutfit.reasons.map((r, i) => (
+                      <View key={i} style={styles.reasonRow}>
+                        <Ionicons name="checkmark-circle" size={13} color={colors.primary} />
+                        <Text style={styles.reasonText}>{r}</Text>
+                      </View>
+                    ))}
+                  </View>
+                )}
               </View>
 
               {/* Feedback & Actions */}
@@ -503,6 +522,11 @@ const styles = StyleSheet.create({
   outfitInfo: { gap: 4 },
   outfitTitle: { fontSize: 16, fontWeight: '700', color: colors.text },
   outfitDesc: { fontSize: 12, color: colors.textMuted, lineHeight: 17 },
+
+  // Reasons
+  reasonBox: { gap: 4, marginTop: 4 },
+  reasonRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  reasonText: { flex: 1, fontSize: 12, color: colors.textMuted },
 
   // Actions
   actionRow: {

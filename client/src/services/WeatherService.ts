@@ -51,8 +51,6 @@ export class WeatherService {
       const { status } = await Location.requestForegroundPermissionsAsync();
       if (status !== 'granted') {
         console.log('[WeatherService] Quyền GPS bị từ chối, kích hoạt fallback thời tiết mặc định');
-        cachedWeather = DEFAULT_WEATHER;
-        lastFetchTime = now;
         return DEFAULT_WEATHER;
       }
 
@@ -120,8 +118,6 @@ export class WeatherService {
       return parsedWeather;
     } catch (error) {
       console.warn('[WeatherService] Lỗi lấy thời tiết, sử dụng fallback mặc định:', error);
-      cachedWeather = DEFAULT_WEATHER;
-      lastFetchTime = now;
       return DEFAULT_WEATHER;
     }
   }

@@ -19,6 +19,7 @@ const CATEGORIES: { id: Category; label: string; icon: any }[] = [
   { id: 'Áo', label: 'Áo', icon: 'shirt-outline' },
   { id: 'Quần', label: 'Quần', icon: 'file-tray-outline' },
   { id: 'Váy', label: 'Váy', icon: 'woman-outline' },
+  { id: 'Đầm', label: 'Đầm', icon: 'sparkles-outline' },
   { id: 'Giày', label: 'Giày', icon: 'footsteps-outline' },
 ];
 

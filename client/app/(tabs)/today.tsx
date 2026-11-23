@@ -16,8 +16,11 @@ import { colors, radius, spacing } from '../../src/constants/theme';
 import { useAuthStore } from '../../src/store/authStore';
 import { useWardrobeStore } from '../../src/store/wardrobeStore';
 import { WeatherData, WeatherService } from '../../src/services/WeatherService';
+import { EventService, PlannedEvent } from '../../src/services/EventService';
+import { daysUntil } from '../../src/utils/eventDate';
 import { OutfitService, SuggestedOutfit } from '../../src/services/OutfitService';
 import { InsightService, WardrobeUtilizationStats } from '../../src/services/InsightService';
+import { daysSince } from '../../src/utils/date';
 
 const CONTEXTS = [
   { id: 'school', name: 'Đi học', icon: 'school-outline' },
@@ -39,13 +42,14 @@ export default function TodayScreen() {
   const [activeOutfitIndex, setActiveOutfitIndex] = useState(0);
   const [isLoadingOutfits, setIsLoadingOutfits] = useState(false);
   const [utilizationStats, setUtilizationStats] = useState<WardrobeUtilizationStats | null>(null);
+  const [nextEvent, setNextEvent] = useState<PlannedEvent | null>(null);
 
   // Lấy thời tiết hiện tại khi vào màn hình
   const fetchWeather = async () => {
     setIsLoadingWeather(true);
     try {
       const data = await WeatherService.getCurrentWeather();
-      setWeather(data);
+      setWeather((prev) => (JSON.stringify(prev) === JSON.stringify(data) ? prev : data));
     } catch (e) {
       console.warn('[TodayScreen] Không thể lấy thời tiết, giữ mặc định:', e);
     } finally {
@@ -61,6 +65,9 @@ export default function TodayScreen() {
   useFocusEffect(
     useCallback(() => {
       loadItems();
+      EventService.listUpcoming()
+        .then((list) => setNextEvent(list[0] ?? null))
+        .catch(() => setNextEvent(null));
     }, [])
   );
 
@@ -114,14 +121,19 @@ export default function TodayScreen() {
   /* [Code cũ - thay bằng InsightService (Issue #26)]
   // Mục "Lâu rồi chưa mặc nhỉ?": Chỉ lấy từ đồ thật của người dùng
   const reminderItem = useMemo(() => {
-    if (items.length > 0) {
-      const dbItem = items[items.length - 1];
-      return {
-        name: dbItem.name || `${dbItem.category} ${dbItem.color_name || ''}`.trim(),
-        image: { uri: dbItem.image_path },
-      };
-    }
-    return null;
+    if (items.length === 0) return null;
+    // Món chưa mặc bao giờ hoặc mặc lâu nhất
+    const oldest = [...items].sort(
+      (a, b) =>
+        (a.last_worn ?? '').localeCompare(b.last_worn ?? '') ||
+        a.created_at.localeCompare(b.created_at),
+    )[0];
+    const d = daysSince(oldest.last_worn);
+    if (d !== null && d < 7) return null; // mới mặc gần đây thì không nhắc
+    return {
+      name: oldest.name || `${oldest.category} ${oldest.color_name || ''}`.trim(),
+      image: { uri: oldest.image_path },
+    };
   }, [items]);
   */
 
@@ -166,6 +178,11 @@ export default function TodayScreen() {
     });
   };
 
+  const greeting = useMemo(() => {
+    const h = new Date().getHours();
+    return h < 11 ? 'Chào buổi sáng' : h < 14 ? 'Chào buổi trưa' : h < 18 ? 'Chào buổi chiều' : 'Chào buổi tối';
+  }, []);
+
   const displayName = name || (email ? email.split('@')[0] : 'An');
   const initial = displayName.charAt(0).toUpperCase();
 
@@ -179,7 +196,7 @@ export default function TodayScreen() {
         {/* Header: Chào buổi sáng & Avatar */}
         <View style={styles.header}>
           <View style={styles.headerLeft}>
-            <Text style={styles.headerTitle}>Chào buổi sáng, {displayName}!</Text>
+            <Text style={styles.headerTitle}>{greeting}, {displayName}!</Text>
             <Text style={styles.headerSubtitle}>{formattedDate}</Text>
           </View>
           <Pressable style={styles.avatar} onPress={openProfile}>
@@ -412,6 +429,17 @@ export default function TodayScreen() {
                   </View>
                 </View>
 
+                {currentOutfit.reasons && currentOutfit.reasons.length > 0 && (
+                  <View style={styles.reasonBox}>
+                    {currentOutfit.reasons.map((r, i) => (
+                      <View key={i} style={styles.reasonRow}>
+                        <Ionicons name="checkmark-circle" size={13} color={colors.primary} />
+                        <Text style={styles.reasonText}>{r}</Text>
+                      </View>
+                    ))}
+                  </View>
+                )}
+
                 {/* CTA Button */}
                 <Pressable
                   style={styles.ctaButton}
@@ -494,6 +522,22 @@ export default function TodayScreen() {
             </View>
           )}
         </View>
+
+        {/* Sự kiện quan trọng */}
+        <Pressable style={styles.eventCard} onPress={() => router.push('/events')}>
+          <Ionicons name="calendar-outline" size={22} color={colors.primary} />
+          <View style={styles.eventInfo}>
+            <Text style={styles.eventTitle}>
+              {nextEvent
+                ? `${nextEvent.type} · ${daysUntil(nextEvent.date) === 0 ? 'hôm nay' : 'còn ' + daysUntil(nextEvent.date) + ' ngày'}`
+                : 'Có sự kiện quan trọng?'}
+            </Text>
+            <Text style={styles.eventDesc}>
+              {nextEvent ? nextEvent.note || 'Chạm để lên đồ cho sự kiện' : 'Lưu ngày và nhờ Closy lên đồ trang trọng.'}
+            </Text>
+          </View>
+          <Ionicons name="chevron-forward" size={18} color={colors.textLight} />
+        </Pressable>
 
         {/* [Code cũ - thay bằng thẻ InsightService Issue #26]
         {reminderItem && (
@@ -908,6 +952,26 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: colors.primary,
   },
+
+  // Reasons
+  reasonBox: { gap: 4 },
+  reasonRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  reasonText: { flex: 1, fontSize: 12, color: colors.textMuted },
+
+  // Event Card
+  eventCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    backgroundColor: colors.surfaceCard,
+    borderRadius: radius.md,
+    padding: spacing.sm + 4,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  eventInfo: { flex: 1 },
+  eventTitle: { fontSize: 13, fontWeight: '700', color: colors.text },
+  eventDesc: { fontSize: 11, color: colors.textMuted, marginTop: 2 },
 
   // Reminder Card (Issue #26: Lâu rồi chưa mặc nhỉ? + Thống kê tận dụng tủ đồ)
   reminderCard: {

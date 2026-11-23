@@ -200,6 +200,19 @@ export default function WardrobeScreen() {
               </Pressable>
             );
           }}
+          ListHeaderComponent={
+            combinedItems.length === 0 ? (
+              <View style={styles.emptyState}>
+                <Ionicons name="shirt-outline" size={40} color={colors.primary} />
+                <Text style={styles.emptyTitle}>Tủ đồ đang trống</Text>
+                <Text style={styles.emptyDesc}>Chụp hoặc chọn ảnh một món để bắt đầu.</Text>
+                <Pressable style={styles.emptyBtn} onPress={() => router.push('/add-item')}>
+                  <Ionicons name="add" size={18} color={colors.onPrimary} />
+                  <Text style={styles.emptyBtnText}>Thêm món đầu tiên</Text>
+                </Pressable>
+              </View>
+            ) : undefined
+          }
           ListFooterComponent={
             <View style={styles.footerNote}>
               <Ionicons name="phone-portrait-outline" size={14} color={colors.textLight} />
@@ -350,6 +363,32 @@ const styles = StyleSheet.create({
   blankCard: {
     width: '31%',
   },
+
+  // Empty state
+  emptyState: {
+    alignItems: 'center',
+    gap: spacing.xs,
+    paddingVertical: spacing.lg,
+    marginBottom: spacing.md,
+    borderRadius: radius.lg,
+    borderWidth: 1.5,
+    borderStyle: 'dashed',
+    borderColor: colors.borderDashed,
+    backgroundColor: '#F0F9FB',
+  },
+  emptyTitle: { fontSize: 16, fontWeight: '700', color: colors.text },
+  emptyDesc: { fontSize: 12, color: colors.textMuted },
+  emptyBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: colors.primary,
+    paddingHorizontal: 18,
+    paddingVertical: 10,
+    borderRadius: radius.md,
+    marginTop: spacing.xs,
+  },
+  emptyBtnText: { color: colors.onPrimary, fontSize: 13, fontWeight: '700' },
 
   // Footer
   footerNote: {

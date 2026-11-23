@@ -30,8 +30,21 @@ export const useWardrobeStore = create<WardrobeState>((set, get) => ({
   loadItems: async () => {
     set({ isLoading: true, error: null });
     try {
-      const items = await WardrobeService.getItems();
-      set({ items, isLoading: false });
+      const next = await WardrobeService.getItems();
+      const prev = get().items;
+      const same =
+        prev.length === next.length &&
+        prev.every((p, i) => {
+          const n = next[i];
+          return (
+            p.id === n.id && p.name === n.name && p.category === n.category &&
+            p.color_h === n.color_h && p.color_s === n.color_s && p.color_l === n.color_l &&
+            p.formality === n.formality && p.contexts === n.contexts &&
+            p.image_path === n.image_path && p.last_worn === n.last_worn
+          );
+        });
+      // Không tạo mảng mới khi dữ liệu không đổi -> tránh gọi lại API gợi ý thừa
+      set(same ? { isLoading: false } : { items: next, isLoading: false });
     } catch (e: any) {
       console.warn('Lỗi tải danh sách đồ từ SQLite:', e);
       set({ error: e?.message || 'Không thể tải tủ đồ', isLoading: false });

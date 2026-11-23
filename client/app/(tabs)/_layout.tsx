@@ -104,6 +104,14 @@ export default function TabsLayout() {
         }}
       />
       <Tabs.Screen
+        name="insights"
+        options={{
+          title: 'Thống kê',
+          headerShown: false,
+          tabBarIcon: renderIcon('stats-chart-outline', 'stats-chart'),
+        }}
+      />
+      <Tabs.Screen
         name="add"
         options={{
           href: null, // ẩn khỏi tab bar vì đã mở qua nút Thêm món
