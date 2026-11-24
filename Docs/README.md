@@ -40,14 +40,4 @@ cd client && npm test && npx tsc --noEmit
 cd server && pip install -r requirements.txt -r requirements-dev.txt && pytest -q
 ```
 
-## Đo thời gian tách nền
-```bash
-python server/scripts/benchmark_process.py --url http://localhost:8000 \
-  --email <email> --password <mật khẩu> --dir ./sample_photos
-```
-Dán kết quả vào `docs/BENCHMARK.md`.
 
-## Tài liệu
-- `docs/Backlog.md` – backlog và quyết định
-- `docs/APK.md` – build và cài APK
-- `docs/BENCHMARK.md` – số liệu đo
