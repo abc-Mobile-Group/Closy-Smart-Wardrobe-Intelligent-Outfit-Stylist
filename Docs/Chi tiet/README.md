@@ -16,7 +16,7 @@
 | Vì sao chọn như vậy | [DECISIONS.md](DECISIONS.md) |
 | Thiết kế thông báo nhắc sự kiện (chưa code) | [Design-Notifications.md](Design-Notifications.md) |
 | Số liệu đo thời gian tách nền | [Benchmark.md](Benchmark.md) |
-| Tài liệu cũ (không còn đúng) | [Archive/](Archive/README.md) |
+
 
 ## Ngày đầu tiên (khoảng 1–2 giờ)
 
