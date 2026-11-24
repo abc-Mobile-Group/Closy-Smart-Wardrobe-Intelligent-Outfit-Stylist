@@ -14,7 +14,24 @@
     "plugins": [
       "expo-router",
       "expo-secure-store",
-      "@react-native-google-signin/google-signin"
+      "@react-native-google-signin/google-signin",
+      [
+        "expo-image-picker",
+        {
+          "cameraPermission": "Closy cần máy ảnh để chụp trang phục của bạn.",
+          "photosPermission": "Closy cần truy cập thư viện để bạn chọn ảnh trang phục."
+        }
+      ],
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "Closy dùng vị trí để xem thời tiết."
+        }
+      ],
+      "expo-splash-screen",
+      "expo-sqlite",
+      "expo-status-bar",
+      "expo-web-browser"
     ],
     "extra": {
       "router": {
