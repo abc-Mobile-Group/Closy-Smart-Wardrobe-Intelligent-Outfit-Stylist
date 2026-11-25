@@ -22,9 +22,9 @@ Không bao giờ commit file `.env` thật. Chỉ commit `.env.example`.
 
 | Biến | Ý nghĩa | Ghi chú |
 | :--- | :--- | :--- |
-| `GOOGLE_CLIENT_ID` | **Web** client ID của Google Cloud | Bắt buộc. Đăng nhập email vẫn chạy được nếu bạn chỉ cần thử |
+| `GOOGLE_CLIENT_ID` | **Web** client ID của Google Cloud | Bắt buộc (server không khởi động nếu thiếu). Đăng nhập email vẫn chạy được nếu bạn chỉ cần thử |
 | `JWT_SECRET` | Khóa ký token | Bắt buộc. Chuỗi ngẫu nhiên **≥ 32 ký tự** |
-| `DB_PATH` | Đường dẫn SQLite của server | Mặc định `closy.db`; trong Docker là `/data/closy.db` |
+| `DB_PATH` | Đường dẫn SQLite của server | Mặc định `closy.db`. **`.env.example` đang ghi `/data/closy.db` (đường dẫn trong Docker)**: chạy bằng Python trực tiếp phải đổi thành `closy.db`, nếu không sẽ lỗi `unable to open database file`. Docker thì compose tự đặt `/data/closy.db` |
 | `OLLAMA_HOST` | Địa chỉ Ollama | Mặc định `http://host.docker.internal:11434`; server tự thử thêm `127.0.0.1` và `localhost` |
 | `OLLAMA_MODEL` | Tên model | Mặc định `gemma4:e4b` |
 | `REMBG_HOME` | Thư mục lưu model tách nền | Xem mục 4 |
@@ -42,7 +42,7 @@ python3 -c "import secrets; print(secrets.token_urlsafe(48))"
 | `EXPO_PUBLIC_API_URL` | Địa chỉ server, **không có dấu `/` cuối** (vd `http://localhost:8000`) |
 | `EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID` | Cùng giá trị với `GOOGLE_CLIENT_ID` của server |
 
-> Mọi biến `EXPO_PUBLIC_*` bị **nhúng vào app lúc bundle** và ai cũng đọc được. Không đặt bí mật vào đây. Đổi `.env` xong phải chạy lại Metro với `-c` (xóa cache).
+> Mọi biến `EXPO_PUBLIC_*` bị **nhúng vào app lúc bundle** và ai cũng đọc được. Không đặt bí mật vào đây (Web client ID vốn không phải bí mật). Đổi `.env` xong phải chạy lại Metro với `-c` (xóa cache).
 
 ## 3. Chạy server
 
@@ -52,7 +52,7 @@ cd server
 python3 -m venv .venv
 source .venv/bin/activate            # mỗi terminal mới đều phải chạy lại dòng này
 pip install -r requirements.txt -r requirements-dev.txt
-cp .env.example .env                 # rồi sửa JWT_SECRET
+cp .env.example .env                 # rồi sửa JWT_SECRET và DB_PATH=closy.db
 uvicorn main:app --reload --port 8000
 ```
 Muốn điện thoại cùng Wi-Fi gọi được: thêm `--host 0.0.0.0`.
@@ -68,20 +68,23 @@ docker compose ps                            # api và tunnel phải "running"
 docker compose logs tunnel | grep trycloudflare    # lấy link https://xxxx.trycloudflare.com
 curl https://<link>/health
 ```
+Bật cả web (xem giao diện ở `http://localhost:8081`, **không** chạy cùng `expo start`): `docker compose up --build -d`.
+
 Lưu ý khi dùng Docker:
 - Link `trycloudflare` **đổi mỗi lần tunnel khởi động lại** (kể cả khi laptop mất mạng rồi nối lại). Đổi link thì phải sửa `client/.env` và chạy lại Metro `-c`.
 - Compose đang **bind-mount** `server/main.py` và `server/color_extractor.py` vào container (tiện cho dev). Sửa code xong chạy `docker compose restart api`. Bản giao khách nên bỏ hai dòng mount này.
-- `docker compose` ở gốc là file đúng. `server/docker-compose.yml` là bản trùng cũ (đã lỗi thời, nên xóa).
+- `docker-compose.yml` ở **gốc** là file đúng. `server/docker-compose.yml` là bản trùng cũ (đã lỗi thời, nên xóa).
 - `server/Dockerfile` chưa cài `libgomp1`. Nếu `onnxruntime` báo thiếu `libgomp.so`, thêm vào Dockerfile:
   ```dockerfile
   RUN apt-get update && apt-get install -y --no-install-recommends libgomp1 && rm -rf /var/lib/apt/lists/*
   ```
+- Web trong Docker nhúng `EXPO_PUBLIC_API_URL` lúc **build** (mặc định `http://localhost:8000`). Đổi URL thì phải build lại (`--build`).
 
 ## 4. Model tách nền (rembg) — chỗ hay lỗi nhất
 
 `/image/process` cần model `u2net` (~170 MB). Server tự tải **lần đầu** nên cần có mạng.
 
-- `main.py` dùng thư mục `server/.models/` làm nơi lưu **nếu thư mục này đã tồn tại**; nếu chưa, `rembg` dùng thư mục mặc định trong home của bạn.
+- `main.py` dùng thư mục `server/.models/` làm nơi lưu **nếu thư mục này đã tồn tại** và chưa đặt `REMBG_HOME`; nếu chưa, `rembg` dùng thư mục mặc định trong home của bạn.
 - **Đừng để Docker tạo `server/.models`**: nó sẽ thuộc về `root` và server không ghi được → `/image/process` trả 500 với lỗi `Permission denied ... .models`.
   - Sửa: `sudo chown -R "$USER":"$USER" server/.models`, hoặc chạy với `REMBG_HOME="$HOME/.cache/rembg"`.
 - Compose mount `./server/.models:/models:ro` (**chỉ đọc**) nên container **không tự tải được** model. Tải model về `server/.models/` trước bằng cách chạy server theo Cách A một lần.
@@ -94,7 +97,7 @@ Dùng để nhận diện loại đồ, tên, độ lịch sự và từ chối 
 ollama pull gemma4:e4b
 ```
 - Không có Ollama: server tự dùng heuristic hình học (kém chính xác hơn), app vẫn chạy.
-- Server trong Docker trên Linux gọi Ollama ở máy host: Ollama phải nghe ở `0.0.0.0`, không chỉ `127.0.0.1` (đặt `OLLAMA_HOST=0.0.0.0` khi chạy Ollama).
+- Server trong Docker trên Linux gọi Ollama ở máy host: Ollama phải nghe ở `0.0.0.0`, không chỉ `127.0.0.1` (đặt `OLLAMA_HOST=0.0.0.0` khi chạy Ollama; cách chính xác tùy cách cài, xem tài liệu Ollama).
 
 ## 6. Chạy client
 
@@ -116,7 +119,7 @@ npm install
 
 Bản release của Android mặc định **chặn HTTP thường**, nên APK giao khách phải dùng link **HTTPS**.
 
-Nếu điện thoại báo `Failed to connect to <IP>:8081` (không thấy Metro): chạy `npx expo start --dev-client --tunnel -c` (lần đầu sẽ hỏi cài `@expo/ngrok`, bấm `y`), hoặc phát hotspot từ điện thoại.
+Nếu điện thoại báo `Failed to connect to <IP>:8081` (không thấy Metro): chạy `npx expo start --dev-client --tunnel -c` (lần đầu sẽ hỏi cài `@expo/ngrok`, bấm `y`), thử `sudo ufw allow 8081`, hoặc phát hotspot từ điện thoại.
 
 ### Development build (làm một lần)
 ```bash
@@ -124,7 +127,8 @@ npm install -g eas-cli && eas login
 cd client
 eas build --profile development --platform android     # 10–20 phút, cài APK nhận được vào máy
 ```
-**Chỉ phải build lại** khi đổi phần native: thêm thư viện native, sửa `app.json` (plugins, package, icon), nâng phiên bản Expo/React Native. Sửa `.ts/.tsx` hay đổi API URL thì **không**.
+Luôn chạy `eas` **trong `client/`** (xem [05](05-Build-APK-va-giao-khach.md)).
+**Chỉ phải build lại** khi đổi phần native: thêm thư viện native (vd `expo-image-picker`), sửa `app.json` (plugins, package, icon), nâng phiên bản Expo/React Native. Sửa `.ts/.tsx` hay đổi API URL thì **không**.
 Thiết lập Google Cloud cho đăng nhập Google: xem [05-Build-APK-va-giao-khach.md](05-Build-APK-va-giao-khach.md).
 
 ## 7. Chạy test
@@ -145,9 +149,9 @@ pytest -q
 
 ## 8. Kịch bản kiểm tra nhanh (smoke test, ~10 phút)
 
-1. Đăng ký tài khoản email, đăng xuất, đăng nhập lại.
+1. Đăng ký tài khoản email (sẽ qua màn onboarding), đăng xuất, đăng nhập lại.
 2. Thêm 3 món: một áo, một quần, một đôi giày (chọn ảnh từ thư viện). Kiểm tra tên, màu, danh mục tự điền.
-3. Thử một ảnh không phải trang phục → phải có thông báo từ chối.
+3. Thử một ảnh không phải trang phục → phải có thông báo từ chối (cần Ollama; không có thì server dùng heuristic và có thể không từ chối).
 4. Tab **Hôm nay**: đổi bối cảnh, xem bộ gợi ý và các dòng lý do.
 5. Chạm **Chi tiết bộ phối** → khóa một món → **Đổi tất cả món chưa khóa** → món khóa phải giữ nguyên.
 6. **Xác nhận mặc** → tab **Lịch sử** thấy chấm ở ngày hôm nay.
