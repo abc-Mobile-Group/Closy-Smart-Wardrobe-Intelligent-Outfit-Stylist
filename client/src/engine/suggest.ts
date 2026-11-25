@@ -122,10 +122,10 @@ export function mapWardrobeItemToDisplay(dbItem: WardrobeItem): DisplayItem {
 
 const colorOf = (it: WardrobeItem): HSLColor => ({ h: it.color_h ?? 0, s: it.color_s ?? 0, l: it.color_l ?? 100 });
 
-const isDress = (it: WardrobeItem) =>
+export const isDress = (it: WardrobeItem) =>
   it.category === 'Đầm' || (it.category === 'Váy' && /đầm|dress/i.test(it.name || ''));
-const isTop = (it: WardrobeItem) => it.category === 'Áo' && !/khoác/i.test(it.name || '');
-const isBottom = (it: WardrobeItem) => it.category === 'Quần' || (it.category === 'Váy' && !isDress(it));
+export const isTop = (it: WardrobeItem) => it.category === 'Áo' && !/khoác/i.test(it.name || '');
+export const isBottom = (it: WardrobeItem) => it.category === 'Quần' || (it.category === 'Váy' && !isDress(it));
 const isShoe = (it: WardrobeItem) => it.category === 'Giày';
 
 function titleFor(context: string): string {

@@ -10,11 +10,12 @@ import {
   TextInput,
   View,
 } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors, radius, spacing } from '../../src/constants/theme';
 import ItemDetailModal from '../../src/components/ItemDetailModal';
+import Toast from '../../src/components/Toast';
 import { useAuthStore } from '../../src/store/authStore';
 import { useWardrobeStore } from '../../src/store/wardrobeStore';
 import { WardrobeItem } from '../../src/types/item';
@@ -36,6 +37,14 @@ const formatGridData = (dataList: any[], numCols: number = 3) => {
 
 export default function WardrobeScreen() {
   const router = useRouter();
+  const { added } = useLocalSearchParams<{ added?: string }>();
+  const [showAddedToast, setShowAddedToast] = useState(false);
+  useEffect(() => {
+    if (added === '1') {
+      setShowAddedToast(true);
+      router.setParams({ added: '' });
+    }
+  }, [added]);
   const { email, name, openProfile } = useAuthStore();
   const { items: dbItems, loadItems, deleteItem, updateItem } = useWardrobeStore();
   const [selectedCategory, setSelectedCategory] = useState<string>('Tất cả');
@@ -221,6 +230,12 @@ export default function WardrobeScreen() {
               </Text>
             </View>
           }
+        />
+
+        <Toast
+          visible={showAddedToast}
+          message="Đã thêm vào tủ đồ"
+          onHide={() => setShowAddedToast(false)}
         />
 
         {/* Modal xem chi tiết, chỉnh sửa & xóa món đồ */}

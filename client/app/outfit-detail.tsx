@@ -42,6 +42,7 @@ export default function OutfitDetailScreen() {
   const [lockedItemIds, setLockedItemIds] = useState<string[]>([]);
   const [swapMessage, setSwapMessage] = useState('');
   const [seenOutfits, setSeenOutfits] = useState<Set<string>>(new Set());
+  const [confirming, setConfirming] = useState(false);
 
   useEffect(() => { void useWardrobeStore.getState().loadItems(); }, []);
 
@@ -185,6 +186,8 @@ export default function OutfitDetailScreen() {
 
   // 7. Xác nhận mặc -> lưu lịch sử
   const handleConfirmWear = async () => {
+    if (confirming || currentItems.length === 0) return;
+    setConfirming(true);
     const ids = currentItems.map((i) => Number(i.id)).filter((n) => Number.isFinite(n));
     try {
       await HistoryService.confirmWear(ids, currentContext);
@@ -192,6 +195,7 @@ export default function OutfitDetailScreen() {
       router.replace({ pathname: '/(tabs)/history', params: { saved: '1' } });
     } catch (e) {
       console.warn('[outfit-detail] Lưu lịch sử thất bại:', e);
+      setConfirming(false);
     }
   };
 
@@ -362,7 +366,11 @@ export default function OutfitDetailScreen() {
         <Text style={styles.confirmDisclaimer}>
           Xác nhận để lưu bộ đồ vào lịch sử hôm nay.
         </Text>
-        <Pressable style={styles.confirmBtn} onPress={handleConfirmWear}>
+        <Pressable
+          style={[styles.confirmBtn, confirming && { opacity: 0.6 }]}
+          onPress={handleConfirmWear}
+          disabled={confirming}
+        >
           <Text style={styles.confirmBtnText}>Xác nhận mặc</Text>
           <Ionicons name="checkmark" size={18} color={colors.onPrimary} />
         </Pressable>

@@ -61,7 +61,8 @@ export default function EventsScreen() {
     }
     setBusyId(ev.id);
     try {
-      const weather = await WeatherService.getCurrentWeather().catch(() => WeatherService.getDefaultWeather());
+      const weather =
+        (await WeatherService.getCurrentWeather().catch(() => null)) ?? WeatherService.getDefaultWeather();
       const list = await OutfitService.getSuggestions(items, EVENT_CONTEXT, weather);
       const best = list[0];
       if (!best) {

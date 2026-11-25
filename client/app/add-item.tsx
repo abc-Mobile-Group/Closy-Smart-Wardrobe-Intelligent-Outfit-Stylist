@@ -3,6 +3,7 @@ import {
   ActivityIndicator,
   Alert,
   Image,
+  Linking,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -10,7 +11,7 @@ import {
   TextInput,
   View,
 } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -19,6 +20,8 @@ import { ImageService } from '../src/services/ImageService';
 import { ProcessedColor } from '../src/api/endpoints';
 import { Category, Formality } from '../src/types/item';
 import { useWardrobeStore } from '../src/store/wardrobeStore';
+import InlineBanner from '../src/components/InlineBanner';
+import PermissionPrompt from '../src/components/PermissionPrompt';
 
 // 5 Danh mục chuẩn: Áo, Quần, Váy, Đầm, Giày
 const CATEGORIES: { id: Category; label: string; icon: any }[] = [
@@ -56,6 +59,11 @@ const COLOR_PALETTE = [
 
 export default function AddItemScreen() {
   const router = useRouter();
+  // Mở từ thông báo "thiếu danh mục" thì chọn sẵn danh mục còn thiếu
+  const { category: categoryParam } = useLocalSearchParams<{ category?: string }>();
+  const initialCategory: Category = CATEGORIES.some((c) => c.id === categoryParam)
+    ? (categoryParam as Category)
+    : 'Áo';
   const addItemToStore = useWardrobeStore((state) => state.addItem);
 
   // 1. Quản lý ảnh & AI (Bỏ mock data, chỉ dùng ảnh thật)
@@ -72,10 +80,12 @@ export default function AddItemScreen() {
 
   // 2. Thuộc tính trang phục (DoD)
   const [itemName, setItemName] = useState<string>('');
-  const [category, setCategory] = useState<Category>('Áo');
+  const [category, setCategory] = useState<Category>(initialCategory);
   const [formality, setFormality] = useState<Formality>(3); // Mặc định 3: Lịch sự vừa
   const [selectedContexts, setSelectedContexts] = useState<string[]>(['Đi học', 'Đi làm']);
   const [isSaving, setIsSaving] = useState(false);
+  const [showCameraPrompt, setShowCameraPrompt] = useState(false);
+  const [aiFailed, setAiFailed] = useState<{ uri: string; message: string } | null>(null);
 
   /**
    * Bật/tắt bối cảnh (Multi-select)
@@ -170,6 +180,7 @@ export default function AddItemScreen() {
    */
   const processImageUri = async (rawUri: string) => {
     setIsProcessingImage(true);
+    setAiFailed(null);
     try {
       const result = await ImageService.processClothingImage(rawUri);
 
@@ -184,6 +195,7 @@ export default function AddItemScreen() {
       }
 
       setCurrentImageUri(result.uri);
+      setAiFailed(result.isFallback ? { uri: rawUri, message: result.errorMessage || '' } : null);
       setIsAiTransparent(result.isTransparent);
 
       if (result.color) {
@@ -249,6 +261,7 @@ export default function AddItemScreen() {
     } catch (e: any) {
       console.warn('Lỗi khi xử lý ảnh:', e);
       setCurrentImageUri(rawUri);
+      setAiFailed({ uri: rawUri, message: e?.message || '' });
       setIsAiTransparent(false);
     } finally {
       setIsProcessingImage(false);
@@ -258,11 +271,40 @@ export default function AddItemScreen() {
   /**
    * Chạm 1A: Chụp ảnh từ Camera
    */
+  const askOpenSettings = (what: string) => {
+    Alert.alert(
+      `Cần quyền ${what}`,
+      `Hãy bật quyền ${what} trong Cài đặt, hoặc chọn ảnh từ thư viện.`,
+      [
+        { text: 'Mở Cài đặt', onPress: () => Linking.openSettings() },
+        ...(what === 'máy ảnh'
+          ? [{ text: 'Chọn từ thư viện', onPress: () => handleGalleryPick() }]
+          : []),
+        { text: 'Để sau', style: 'cancel' as const },
+      ],
+    );
+  };
+
+  const friendlyAiError = (msg: string) =>
+    /không kết nối|quá chậm/i.test(msg)
+      ? 'Không kết nối được máy chủ. Bạn vẫn có thể dùng ảnh gốc, rồi tự chọn màu.'
+      : 'Bạn có thể dùng ảnh gốc, rồi tự chọn màu.';
+
+  // Xin quyền theo ngữ cảnh: chỉ hiện màn giải thích khi quyền còn "chưa hỏi" (P1)
   const handleCameraCapture = async () => {
+    const cur = await ImagePicker.getCameraPermissionsAsync();
+    if (cur.status === 'undetermined') {
+      setShowCameraPrompt(true);
+      return;
+    }
+    await openCamera();
+  };
+
+  const openCamera = async () => {
     try {
       const perm = await ImagePicker.requestCameraPermissionsAsync();
       if (!perm.granted) {
-        Alert.alert('Quyền truy cập', 'Closy cần quyền máy ảnh để chụp trang phục của bạn.');
+        askOpenSettings('máy ảnh');
         return;
       }
 
@@ -286,7 +328,7 @@ export default function AddItemScreen() {
     try {
       const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
       if (!perm.granted) {
-        Alert.alert('Quyền truy cập', 'Closy cần quyền truy cập thư viện để chọn ảnh trang phục.');
+        askOpenSettings('thư viện ảnh');
         return;
       }
 
@@ -340,7 +382,7 @@ export default function AddItemScreen() {
       });
 
       // Chuyển hướng về tab Tủ đồ
-      router.replace('/(tabs)/wardrobe');
+      router.replace({ pathname: '/(tabs)/wardrobe', params: { added: '1' } });
     } catch (error: any) {
       Alert.alert('Lỗi lưu trang phục', error?.message || 'Không thể lưu vào tủ đồ. Vui lòng thử lại.');
     } finally {
@@ -389,6 +431,20 @@ export default function AddItemScreen() {
             </Pressable>
           </View>
         </View>
+
+        {/* Tách nền lỗi: giữ ảnh gốc, có lối thoát (R1) */}
+        {aiFailed && !isProcessingImage && (
+          <InlineBanner
+            tone="warning"
+            title="Chưa tách được nền."
+            message={friendlyAiError(aiFailed.message)}
+            actions={[
+              { label: 'Dùng ảnh gốc', primary: true, onPress: () => setAiFailed(null) },
+              { label: 'Thử lại', onPress: () => processImageUri(aiFailed.uri) },
+              { label: 'Chọn ảnh khác', onPress: handleGalleryPick },
+            ]}
+          />
+        )}
 
         {/* Khung xem trước ảnh (Preview) */}
         <View style={[styles.previewCard, isAiTransparent && styles.previewCardTransparent]}>
@@ -603,6 +659,19 @@ export default function AddItemScreen() {
           Hoàn tất thêm trang phục trong 4 chạm nhanh chóng.
         </Text>
       </View>
+      <PermissionPrompt
+        visible={showCameraPrompt}
+        icon="camera-outline"
+        title="Cho Closy dùng máy ảnh?"
+        message="Closy cần máy ảnh để chụp trang phục của bạn. Ảnh chỉ được dùng để thêm vào tủ đồ."
+        confirmLabel="Tiếp tục"
+        cancelLabel="Để sau"
+        onConfirm={() => {
+          setShowCameraPrompt(false);
+          openCamera();
+        }}
+        onCancel={() => setShowCameraPrompt(false)}
+      />
     </SafeAreaView>
   );
 }

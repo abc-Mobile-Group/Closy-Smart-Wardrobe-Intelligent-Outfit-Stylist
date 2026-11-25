@@ -32,7 +32,7 @@ export default function RootLayout() {
 
   // Khởi động: mở DB (chạy migration) rồi đọc phiên đăng nhập đã lưu.
   useEffect(() => {
-    setUnauthorizedHandler(() => useAuthStore.getState().signOut());
+    setUnauthorizedHandler(() => useAuthStore.getState().expireSession());
     (async () => {
       try {
         await getDb();

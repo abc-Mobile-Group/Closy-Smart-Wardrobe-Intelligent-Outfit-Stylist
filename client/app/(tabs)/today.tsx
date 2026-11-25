@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Alert,
   Image,
+  Linking,
   Platform,
   Pressable,
   ScrollView,
@@ -20,6 +21,10 @@ import { EventService, PlannedEvent } from '../../src/services/EventService';
 import { daysUntil } from '../../src/utils/eventDate';
 import { OutfitService, SuggestedOutfit } from '../../src/services/OutfitService';
 import { daysSince } from '../../src/utils/date';
+import OutfitSkeleton from '../../src/components/OutfitSkeleton';
+import PermissionPrompt from '../../src/components/PermissionPrompt';
+import { describeMissing } from '../../src/utils/wardrobeGaps';
+import { useDelayedFlag } from '../../src/utils/useDelayedFlag';
 
 const CONTEXTS = [
   { id: 'school', name: 'Đi học', icon: 'school-outline' },
@@ -35,29 +40,72 @@ export default function TodayScreen() {
 
   const [selectedContext, setSelectedContext] = useState<string>('school');
   const [showWeather, setShowWeather] = useState(true);
-  const [weather, setWeather] = useState<WeatherData>(WeatherService.getDefaultWeather());
+  const [weather, setWeather] = useState<WeatherData | null>(null);
+  const [weatherState, setWeatherState] = useState<'checking' | 'ok' | 'denied' | 'unavailable'>('checking');
+  const [showLocationPrompt, setShowLocationPrompt] = useState(false);
   const [isLoadingWeather, setIsLoadingWeather] = useState(false);
   const [outfits, setOutfits] = useState<SuggestedOutfit[]>([]);
   const [activeOutfitIndex, setActiveOutfitIndex] = useState(0);
   const [isLoadingOutfits, setIsLoadingOutfits] = useState(false);
   const [nextEvent, setNextEvent] = useState<PlannedEvent | null>(null);
+  const showSkeleton = useDelayedFlag(isLoadingOutfits, 300);
 
-  // Lấy thời tiết hiện tại khi vào màn hình
-  const fetchWeather = async () => {
+  // Thời tiết: chỉ xin quyền vị trí sau khi người dùng đồng ý ở màn giải thích (P3).
+  // Không có thời tiết thật thì ẩn thẻ, việc phối đồ vẫn chạy bình thường (O1).
+  const fetchWeather = async (askPermission = false) => {
     setIsLoadingWeather(true);
     try {
-      const data = await WeatherService.getCurrentWeather();
+      const data = await WeatherService.getCurrentWeather({ askPermission });
       setWeather((prev) => (JSON.stringify(prev) === JSON.stringify(data) ? prev : data));
+      if (data) {
+        setWeatherState('ok');
+      } else {
+        const st = await WeatherService.getPermissionStatus();
+        setWeatherState(st === 'granted' ? 'unavailable' : 'denied');
+      }
     } catch (e) {
-      console.warn('[TodayScreen] Không thể lấy thời tiết, giữ mặc định:', e);
+      console.warn('[TodayScreen] Không thể lấy thời tiết:', e);
+      setWeatherState('unavailable');
     } finally {
       setIsLoadingWeather(false);
     }
   };
 
   useEffect(() => {
-    fetchWeather();
+    let alive = true;
+    (async () => {
+      const status = await WeatherService.getPermissionStatus();
+      if (!alive) return;
+      if (status === 'granted') {
+        await fetchWeather();
+      } else if (status === 'undetermined') {
+        setWeatherState('unavailable');
+        setShowLocationPrompt(true);
+      } else {
+        setWeatherState('denied');
+      }
+    })();
+    return () => {
+      alive = false;
+    };
   }, []);
+
+  const handleAllowLocation = async () => {
+    setShowLocationPrompt(false);
+    await fetchWeather(true);
+  };
+
+  const handleLaterLocation = () => {
+    setShowLocationPrompt(false);
+    setWeatherState('denied');
+  };
+
+  const handleWeatherChip = async () => {
+    const status = await WeatherService.getPermissionStatus();
+    if (status === 'undetermined') setShowLocationPrompt(true);
+    else if (status === 'denied') Linking.openSettings();
+    else await fetchWeather();
+  };
 
   // Tự động tải lại đồ khi quay lại tab Hôm nay
   useFocusEffect(
@@ -96,7 +144,11 @@ export default function TodayScreen() {
       }
       setIsLoadingOutfits(true);
       try {
-        const list = await OutfitService.getSuggestions(items, currentContext.name, weather);
+        const list = await OutfitService.getSuggestions(
+          items,
+          currentContext.name,
+          weather ?? WeatherService.getDefaultWeather(),
+        );
         if (isMounted) {
           setOutfits(list);
           setActiveOutfitIndex(0);
@@ -115,6 +167,7 @@ export default function TodayScreen() {
   }, [items, currentContext.name, weather]);
 
   const currentOutfit = outfits.length > 0 ? outfits[Math.min(activeOutfitIndex, outfits.length - 1)] : null;
+  const gap = useMemo(() => describeMissing(items), [items]);
 
   // Mục "Lâu rồi chưa mặc nhỉ?": Chỉ lấy từ đồ thật của người dùng
   const reminderItem = useMemo(() => {
@@ -159,43 +212,60 @@ export default function TodayScreen() {
           </Pressable>
         </View>
 
-        {/* Weather card (Tuân thủ User Story Sprint-3) */}
-        {showWeather ? (
-          <View style={styles.weatherCard}>
-            <View style={styles.weatherLeft}>
-              <Ionicons
-                name={(weather.iconName as any) || 'partly-sunny-outline'}
-                size={24}
-                color={colors.primary}
-              />
-              <View style={styles.weatherTextGroup}>
-                <Text style={styles.weatherTemp}>
-                  {weather.temperature}° · {weather.locationName}, {weather.conditionDescription}
-                </Text>
-                <Text style={styles.weatherNote}>{weather.recommendationAdvice}</Text>
+        {/* Thời tiết: chỉ hiện khi có dữ liệu thật. Không có thì hiện chip nhỏ, vẫn phối đồ bình thường */}
+        {weather ? (
+          showWeather ? (
+            <View style={styles.weatherCard}>
+              <View style={styles.weatherLeft}>
+                <Ionicons
+                  name={(weather.iconName as any) || 'partly-sunny-outline'}
+                  size={24}
+                  color={colors.primary}
+                />
+                <View style={styles.weatherTextGroup}>
+                  <Text style={styles.weatherTemp}>
+                    {weather.temperature}° · {weather.locationName}, {weather.conditionDescription}
+                  </Text>
+                  <Text style={styles.weatherNote}>{weather.recommendationAdvice}</Text>
+                </View>
               </View>
+              <Pressable
+                onPress={() => setShowWeather(false)}
+                hitSlop={10}
+                accessibilityLabel="Tạm ẩn widget thời tiết"
+              >
+                <Ionicons name="close" size={18} color={colors.textLight} />
+              </Pressable>
             </View>
-            <Pressable
-              onPress={() => setShowWeather(false)}
-              hitSlop={10}
-              accessibilityLabel="Tạm ẩn widget thời tiết"
-            >
-              <Ionicons name="close" size={18} color={colors.textLight} />
-            </Pressable>
-          </View>
-        ) : (
+          ) : (
+            <View style={styles.weatherHiddenBar}>
+              <Pressable
+                style={styles.reopenWeatherBtn}
+                onPress={() => setShowWeather(true)}
+              >
+                <Ionicons
+                  name={(weather.iconName as any) || 'partly-sunny-outline'}
+                  size={14}
+                  color={colors.primary}
+                />
+                <Text style={styles.reopenWeatherText}>
+                  {weather.temperature}° {weather.locationName} · Hiện lại thời tiết
+                </Text>
+              </Pressable>
+            </View>
+          )
+        ) : weatherState === 'checking' ? null : (
           <View style={styles.weatherHiddenBar}>
             <Pressable
               style={styles.reopenWeatherBtn}
-              onPress={() => setShowWeather(true)}
+              onPress={handleWeatherChip}
+              accessibilityRole="button"
             >
-              <Ionicons
-                name={(weather.iconName as any) || 'partly-sunny-outline'}
-                size={14}
-                color={colors.primary}
-              />
+              <Ionicons name="cloud-offline-outline" size={14} color={colors.primary} />
               <Text style={styles.reopenWeatherText}>
-                {weather.temperature}° {weather.locationName} · Hiện lại thời tiết
+                {weatherState === 'denied'
+                  ? 'Chưa có thời tiết · chạm để bật vị trí'
+                  : 'Chưa có thời tiết · chạm để thử lại'}
               </Text>
             </Pressable>
           </View>
@@ -270,7 +340,9 @@ export default function TodayScreen() {
             </ScrollView>
           )}
 
-          {currentOutfit ? (
+          {showSkeleton && !currentOutfit ? (
+            <OutfitSkeleton />
+          ) : isLoadingOutfits && !currentOutfit ? null : currentOutfit ? (
             <>
               {/* Large Outfit Inspiration Card */}
               <View style={styles.outfitCard}>
@@ -462,17 +534,18 @@ export default function TodayScreen() {
           ) : (
             <View style={styles.emptyOutfitCard}>
               <Ionicons name="sparkles-outline" size={32} color={colors.primary} />
-              <Text style={styles.emptyOutfitTitle}>Chưa có đủ đồ để phối</Text>
-              <Text style={styles.emptyOutfitDesc}>
-                {items.length === 0
-                  ? 'Tủ đồ của bạn chưa có trang phục nào. Hãy chụp hoặc thêm áo, quần hoặc đầm để Closy gợi ý nhé!'
-                  : 'Hãy thêm thêm áo, quần hoặc đầm để Closy tạo các bộ phối chuẩn phong cách!'}
-              </Text>
+              <Text style={styles.emptyOutfitTitle}>{gap.title}</Text>
+              <Text style={styles.emptyOutfitDesc}>{gap.message}</Text>
               <Pressable
                 style={styles.ctaButton}
-                onPress={() => router.push('/add-item')}
+                onPress={() =>
+                  router.push({
+                    pathname: '/add-item',
+                    params: gap.category ? { category: gap.category } : {},
+                  })
+                }
               >
-                <Text style={styles.ctaText}>Thêm món đồ đầu tiên 📸</Text>
+                <Text style={styles.ctaText}>{gap.cta}</Text>
               </Pressable>
             </View>
           )}
@@ -511,6 +584,16 @@ export default function TodayScreen() {
           </Pressable>
         )}
       </ScrollView>
+      <PermissionPrompt
+        visible={showLocationPrompt}
+        icon="location-outline"
+        title="Xem thời tiết nơi bạn ở?"
+        message="Closy dùng vị trí để xem thời tiết và gợi ý đồ hợp trời. Vị trí không được lưu. Bạn có thể bỏ qua, vẫn phối đồ bình thường."
+        confirmLabel="Cho phép"
+        cancelLabel="Để sau"
+        onConfirm={handleAllowLocation}
+        onCancel={handleLaterLocation}
+      />
     </SafeAreaView>
   );
 }

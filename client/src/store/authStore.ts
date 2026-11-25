@@ -13,6 +13,8 @@ type AuthState = {
   busy: boolean;
   error: string | null;
   isProfileOpen: boolean;
+  sessionExpired: boolean;
+  expireSession: () => Promise<void>;
   init: () => Promise<void>;
   signIn: () => Promise<void>;
   login: (email: string, pass: string) => Promise<boolean>;
@@ -31,6 +33,13 @@ export const useAuthStore = create<AuthState>((set) => ({
   busy: false,
   error: null,
   isProfileOpen: false,
+
+  sessionExpired: false,
+  // Server trả 401: đăng xuất và báo "phiên đã hết hạn" ở màn đăng nhập. Dữ liệu tủ đồ trên máy giữ nguyên.
+  expireSession: async () => {
+    await Auth.signOut();
+    set({ status: 'signedOut', email: null, name: null, error: null, isProfileOpen: false, sessionExpired: true });
+  },
 
   openProfile: () => set({ isProfileOpen: true }),
   closeProfile: () => set({ isProfileOpen: false }),
@@ -59,7 +68,7 @@ export const useAuthStore = create<AuthState>((set) => ({
     set({ busy: true, error: null });
     try {
       const s = await Auth.signInWithGoogle();
-      set({ status: 'signedIn', email: s.email, name: s.name ?? null, busy: false });
+      set({ status: 'signedIn', email: s.email, name: s.name ?? null, busy: false, sessionExpired: false });
     } catch (e) {
       if (e instanceof Auth.SignInCancelled) {
         set({ busy: false });
@@ -74,7 +83,7 @@ export const useAuthStore = create<AuthState>((set) => ({
     set({ busy: true, error: null });
     try {
       const s = await Auth.loginWithEmail(email, pass);
-      set({ status: 'signedIn', email: s.email, name: s.name ?? null, busy: false });
+      set({ status: 'signedIn', email: s.email, name: s.name ?? null, busy: false, sessionExpired: false });
       return true;
     } catch (e) {
       console.error('Lỗi login:', e);
@@ -88,7 +97,7 @@ export const useAuthStore = create<AuthState>((set) => ({
     set({ busy: true, error: null });
     try {
       const s = await Auth.registerWithEmail(email, pass, name);
-      set({ status: 'signedIn', email: s.email, name: s.name ?? null, busy: false });
+      set({ status: 'signedIn', email: s.email, name: s.name ?? null, busy: false, sessionExpired: false });
       return true;
     } catch (e) {
       console.error('Lỗi register:', e);
@@ -117,6 +126,6 @@ export const useAuthStore = create<AuthState>((set) => ({
 
   signOut: async () => {
     await Auth.signOut();
-    set({ status: 'signedOut', email: null, name: null, error: null, isProfileOpen: false });
+    set({ status: 'signedOut', email: null, name: null, error: null, isProfileOpen: false, sessionExpired: false });
   },
 }));

@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Image,
@@ -16,6 +16,8 @@ import { useAuthStore } from '../../src/store/authStore';
 import { useWardrobeStore } from '../../src/store/wardrobeStore';
 import { WeatherData, WeatherService } from '../../src/services/WeatherService';
 import { OutfitService, SuggestedOutfit } from '../../src/services/OutfitService';
+import { describeMissing } from '../../src/utils/wardrobeGaps';
+import { useDelayedFlag } from '../../src/utils/useDelayedFlag';
 
 const CONTEXTS = ['Đi học', 'Đi làm', 'Đi chơi', 'Hẹn hò'] as const;
 
@@ -28,6 +30,7 @@ export default function SuggestScreen() {
   const [weather, setWeather] = useState<WeatherData>(WeatherService.getDefaultWeather());
   const [outfits, setOutfits] = useState<SuggestedOutfit[]>([]);
   const [isLoading, setIsLoading] = useState(false);
+  const showLoading = useDelayedFlag(isLoading, 300);
 
   // Tải danh sách đồ và thời tiết
   useFocusEffect(
@@ -38,7 +41,9 @@ export default function SuggestScreen() {
 
   useEffect(() => {
     WeatherService.getCurrentWeather()
-      .then((data) => setWeather((prev) => (JSON.stringify(prev) === JSON.stringify(data) ? prev : data)))
+      .then((data) => {
+        if (data) setWeather((prev) => (JSON.stringify(prev) === JSON.stringify(data) ? prev : data));
+      })
       .catch(() => {});
   }, []);
 
@@ -70,6 +75,7 @@ export default function SuggestScreen() {
   const initial = displayName.charAt(0).toUpperCase();
 
   const mainOutfit = outfits.length > 0 ? outfits[0] : null;
+  const gap = useMemo(() => describeMissing(items), [items]);
   const altOutfits = outfits.slice(1, 3);
 
   return (
@@ -86,7 +92,7 @@ export default function SuggestScreen() {
             <Text style={styles.subtitle}>
               {outfits.length > 0
                 ? `${outfits.length} lựa chọn từ những món trong tủ đồ của bạn`
-                : 'Gợi ý thông minh dựa trên độ hòa hợp màu sắc HSL'}
+                : 'Gợi ý dựa trên màu sắc, bối cảnh và đồ trong tủ của bạn'}
             </Text>
           </View>
           <Pressable style={styles.avatar} onPress={openProfile}>
@@ -112,12 +118,12 @@ export default function SuggestScreen() {
           })}
         </View>
 
-        {isLoading ? (
+        {showLoading ? (
           <View style={styles.loadingBox}>
             <ActivityIndicator size="large" color={colors.primary} />
-            <Text style={styles.loadingText}>Backend AI Stylist đang phối đồ...</Text>
+            <Text style={styles.loadingText}>Closy đang phối đồ cho bạn...</Text>
           </View>
-        ) : mainOutfit ? (
+        ) : isLoading ? null : mainOutfit ? (
           <>
             {/* Main Recommendation Section */}
             <View style={styles.recommendationBox}>
@@ -328,18 +334,19 @@ export default function SuggestScreen() {
           /* Empty State */
           <View style={styles.emptyContainer}>
             <Ionicons name="shirt-outline" size={48} color={colors.primary} />
-            <Text style={styles.emptyTitle}>Chưa đủ trang phục để phối</Text>
-            <Text style={styles.emptyDesc}>
-              {items.length === 0
-                ? 'Tủ đồ của bạn đang trống. Hãy chụp hoặc thêm quần áo để Closy gợi ý phối đồ chuẩn phong cách nhé!'
-                : 'Bạn cần có ít nhất một chiếc đầm, hoặc một chiếc áo kèm quần/chân váy để tạo bộ phối.'}
-            </Text>
+            <Text style={styles.emptyTitle}>{gap.title}</Text>
+            <Text style={styles.emptyDesc}>{gap.message}</Text>
             <Pressable
               style={styles.emptyBtn}
-              onPress={() => router.push('/add-item')}
+              onPress={() =>
+                router.push({
+                  pathname: '/add-item',
+                  params: gap.category ? { category: gap.category } : {},
+                })
+              }
             >
               <Ionicons name="add" size={20} color={colors.onPrimary} />
-              <Text style={styles.emptyBtnText}>Thêm món đồ</Text>
+              <Text style={styles.emptyBtnText}>{gap.cta}</Text>
             </Pressable>
           </View>
         )}

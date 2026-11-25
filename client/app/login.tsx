@@ -16,26 +16,27 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors, radius, spacing } from '../src/constants/theme';
 import { CLOSY_LOGO, GOOGLE_LOGO } from '../src/constants/seedData';
 import { useAuthStore } from '../src/store/authStore';
+import InlineBanner from '../src/components/InlineBanner';
 
 export default function LoginScreen() {
   const router = useRouter();
-  const { signIn, login, busy, error, clearError } = useAuthStore();
+  const { signIn, login, busy, error, clearError, sessionExpired } = useAuthStore();
   const [emailOrPhone, setEmailOrPhone] = useState('');
   const [password, setPassword] = useState('');
   const [localError, setLocalError] = useState<string | null>(null);
   const [showPassword, setShowPassword] = useState(false);
+  const [submitted, setSubmitted] = useState(false);
+  // Lỗi hiện ngay dưới từng ô sau lần bấm gửi đầu tiên và cập nhật theo lúc gõ
+  const errs = {
+    email: submitted && !emailOrPhone.trim() ? 'Vui lòng nhập email' : undefined,
+    password: submitted && !password ? 'Vui lòng nhập mật khẩu' : undefined,
+  };
 
   const handleStandardLogin = async () => {
     setLocalError(null);
     clearError();
-    if (!emailOrPhone.trim()) {
-      setLocalError('Vui lòng nhập email');
-      return;
-    }
-    if (!password) {
-      setLocalError('Vui lòng nhập mật khẩu');
-      return;
-    }
+    setSubmitted(true);
+    if (!emailOrPhone.trim() || !password) return;
 
     const ok = await login(emailOrPhone.trim(), password);
     if (ok) {
@@ -50,6 +51,7 @@ export default function LoginScreen() {
       <ScrollView
         style={styles.container}
         contentContainerStyle={styles.content}
+        keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
       >
         {/* Logo Banner */}
@@ -63,6 +65,14 @@ export default function LoginScreen() {
           <Text style={styles.subtitle}>Đăng nhập để tìm bộ đồ đúng chất bạn.</Text>
         </View>
 
+        {sessionExpired && !displayError && (
+          <InlineBanner
+            tone="info"
+            title="Phiên đăng nhập đã hết hạn"
+            message="Hãy đăng nhập lại để tiếp tục. Tủ đồ của bạn vẫn còn trên máy."
+          />
+        )}
+
         {displayError && (
           <View style={styles.errorBox}>
             <Ionicons name="alert-circle-outline" size={16} color={colors.danger} />
@@ -74,7 +84,7 @@ export default function LoginScreen() {
         <View style={styles.form}>
           <View style={styles.fieldGroup}>
             <Text style={styles.fieldLabel}>Email</Text>
-            <View style={styles.inputContainer}>
+            <View style={[styles.inputContainer, errs.email && styles.inputError]}>
               <TextInput
                 style={styles.input}
                 placeholder="Nhập email"
@@ -91,11 +101,12 @@ export default function LoginScreen() {
                 keyboardType="email-address"
               />
             </View>
+            {errs.email ? <Text style={styles.fieldError}>{errs.email}</Text> : null}
           </View>
 
           <View style={styles.fieldGroup}>
             <Text style={styles.fieldLabel}>Mật khẩu</Text>
-            <View style={styles.inputContainer}>
+            <View style={[styles.inputContainer, errs.password && styles.inputError]}>
               <TextInput
                 style={styles.input}
                 placeholder="Nhập mật khẩu"
@@ -122,6 +133,7 @@ export default function LoginScreen() {
                 />
               </Pressable>
             </View>
+            {errs.password ? <Text style={styles.fieldError}>{errs.password}</Text> : null}
           </View>
 
           <Pressable style={styles.forgotBtn}>
@@ -225,6 +237,8 @@ const styles = StyleSheet.create({
   },
   input: { flex: 1, fontSize: 14, color: colors.text },
   eyeBtn: { padding: 4 },
+  inputError: { borderColor: colors.danger },
+  fieldError: { fontSize: 12, color: colors.danger },
 
   forgotBtn: { alignSelf: 'flex-end' },
   forgotText: { fontSize: 12, fontWeight: '600', color: colors.primary },

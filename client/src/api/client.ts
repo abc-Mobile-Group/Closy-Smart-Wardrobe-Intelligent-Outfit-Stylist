@@ -86,9 +86,9 @@ export async function apiFetch<T>(
     });
     if (e instanceof ApiError) throw e;
     if (e?.name === 'AbortError') {
-      throw new ApiError(0, `Server phản hồi quá chậm (> ${timeoutMs / 1000}s)`);
+      throw new ApiError(0, 'Máy chủ phản hồi quá chậm. Hãy thử lại.');
     }
-    throw new ApiError(0, `Không kết nối được server: [${e?.name || 'Error'}] ${e?.message || 'Lỗi mạng'}`);
+    throw new ApiError(0, 'Không kết nối được máy chủ. Kiểm tra mạng rồi thử lại.');
   } finally {
     clearTimeout(timer);
   }

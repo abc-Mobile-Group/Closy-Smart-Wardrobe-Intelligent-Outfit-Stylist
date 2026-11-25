@@ -24,22 +24,19 @@ export default function RegisterScreen() {
   const [password, setPassword] = useState('');
   const [localError, setLocalError] = useState<string | null>(null);
   const [showPassword, setShowPassword] = useState(false);
+  const [submitted, setSubmitted] = useState(false);
+  // Lỗi hiện ngay dưới từng ô sau lần bấm gửi đầu tiên và cập nhật theo lúc gõ
+  const errs = {
+    fullName: submitted && !fullName.trim() ? 'Vui lòng nhập họ và tên' : undefined,
+    email: submitted && (!email.trim() || !email.includes('@')) ? 'Vui lòng nhập email hợp lệ' : undefined,
+    password: submitted && password.length < 8 ? 'Mật khẩu phải có ít nhất 8 ký tự' : undefined,
+  };
 
   const handleRegister = async () => {
     setLocalError(null);
     clearError();
-    if (!fullName.trim()) {
-      setLocalError('Vui lòng nhập họ và tên');
-      return;
-    }
-    if (!email.trim() || !email.includes('@')) {
-      setLocalError('Vui lòng nhập email hợp lệ');
-      return;
-    }
-    if (password.length < 8) {
-      setLocalError('Mật khẩu phải có ít nhất 8 ký tự');
-      return;
-    }
+    setSubmitted(true);
+    if (!fullName.trim() || !email.trim() || !email.includes('@') || password.length < 8) return;
 
     const ok = await register(email.trim(), password, fullName.trim());
     if (ok) {
@@ -55,6 +52,7 @@ export default function RegisterScreen() {
       <ScrollView
         style={styles.container}
         contentContainerStyle={styles.content}
+        keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
       >
         {/* Logo Banner */}
@@ -79,7 +77,7 @@ export default function RegisterScreen() {
         <View style={styles.form}>
           <View style={styles.fieldGroup}>
             <Text style={styles.fieldLabel}>Họ Tên</Text>
-            <View style={styles.inputContainer}>
+            <View style={[styles.inputContainer, errs.fullName && styles.inputError]}>
               <TextInput
                 style={styles.input}
                 placeholder="Nhập họ và tên"
@@ -94,11 +92,12 @@ export default function RegisterScreen() {
                 }}
               />
             </View>
+            {errs.fullName ? <Text style={styles.fieldError}>{errs.fullName}</Text> : null}
           </View>
 
           <View style={styles.fieldGroup}>
             <Text style={styles.fieldLabel}>Email</Text>
-            <View style={styles.inputContainer}>
+            <View style={[styles.inputContainer, errs.email && styles.inputError]}>
               <TextInput
                 style={styles.input}
                 placeholder="Nhập địa chỉ email"
@@ -115,11 +114,12 @@ export default function RegisterScreen() {
                 autoCapitalize="none"
               />
             </View>
+            {errs.email ? <Text style={styles.fieldError}>{errs.email}</Text> : null}
           </View>
 
           <View style={styles.fieldGroup}>
             <Text style={styles.fieldLabel}>Mật khẩu</Text>
-            <View style={styles.inputContainer}>
+            <View style={[styles.inputContainer, errs.password && styles.inputError]}>
               <TextInput
                 style={styles.input}
                 placeholder="Nhập mật khẩu"
@@ -146,6 +146,7 @@ export default function RegisterScreen() {
                 />
               </Pressable>
             </View>
+            {errs.password ? <Text style={styles.fieldError}>{errs.password}</Text> : null}
             <Text style={styles.hintText}>Sử dụng ít nhất 8 ký tự cho mật khẩu.</Text>
           </View>
 
@@ -223,6 +224,8 @@ const styles = StyleSheet.create({
   },
   input: { flex: 1, fontSize: 14, color: colors.text },
   eyeBtn: { padding: 4 },
+  inputError: { borderColor: colors.danger },
+  fieldError: { fontSize: 12, color: colors.danger },
   hintText: { fontSize: 11, color: colors.textLight },
 
   submitBtn: {
