@@ -1,7 +1,6 @@
 # 05. Build APK và giao khách
 
 > Dùng khi cần cho người khác cài app thử, hoặc bật đăng nhập Google.
-> **Mọi lệnh `eas` chạy trong `client/`.** Thư mục gốc có `app.json` và `eas.json` riêng với `projectId` khác, dễ nhầm.
 
 ## 1. Google Cloud Console (làm một lần, hay mất thời gian nhất)
 
@@ -11,10 +10,9 @@
    - Package name: `com.nhom.closy` (phải khớp `android.package` trong `client/app.json`)
    - SHA-1: lấy bằng `eas credentials -p android` → Keystore → SHA-1.
      **Chỉ xem.** Đừng chọn "Set up a new keystore" hay "Delete", vì sẽ đổi mất SHA-1.
-4. Kiểm tra mục Clients phải có đủ 2 dòng (Web và Android). Android client mới tạo có thể mất tới ~10 phút mới có hiệu lực.
-5. Nếu app ở trạng thái **Testing**: thêm Gmail của mọi người cần đăng nhập vào **Test users** (mục Audience); hoặc chuyển sang **In production**.
-6. Mỗi build profile có thể dùng keystore khác nhau (và bản debug khác bản EAS). Profile mới phải đăng ký thêm SHA-1 của nó.
-7. Giao diện Google Cloud hay đổi; đối chiếu tài liệu hiện hành của `@react-native-google-signin/google-signin`.
+4. Nếu app ở trạng thái **Testing**: thêm Gmail của mọi người cần đăng nhập vào **Test users**; hoặc chuyển sang **In production**.
+5. Mỗi build profile có thể dùng keystore khác nhau. Profile mới phải đăng ký thêm SHA-1 của nó.
+6. Giao diện Google Cloud hay đổi; đối chiếu tài liệu hiện hành của `@react-native-google-signin/google-signin`.
 
 ## 2. Các profile build (`client/eas.json`)
 
@@ -50,7 +48,7 @@ Link `trycloudflare` miễn phí đổi mỗi lần chạy lại. Dùng **Cloudf
     depends_on: [api]
     restart: unless-stopped
 ```
-Hoặc dùng Tailscale Funnel, hoặc đưa server lên một host. Laptop làm server thì phải **cắm sạc, tắt sleep** và báo khung giờ server online. Bản giao khách nên bỏ hai dòng bind-mount `main.py`, `color_extractor.py` trong compose (xem file 02).
+Hoặc dùng Tailscale Funnel, hoặc đưa server lên một host. Laptop làm server thì phải **cắm sạc, tắt sleep** và báo khung giờ server online.
 
 ## 5. Build và cài
 
